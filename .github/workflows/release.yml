@@ -1,0 +1,175 @@
+name: Release
+run-name: "Release ${{ github.ref_name }}"
+
+on:
+  push:
+    tags: ["v[0-9]+.[0-9]+.[0-9]+*"]
+
+permissions:
+  contents: write
+
+env:
+  PYTHONUNBUFFERED: "1"
+
+jobs:
+  # ── Gate: all tests must pass before any artifact is built ────────────────
+  test:
+    name: Test gate
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: "pip"
+
+      - name: Install
+        run: pip install ".[dev]"
+
+      - name: Unit tests
+        run: pytest src/ tests/ -v --tb=short
+
+      - name: Validate skills
+        run: |
+          pip install pyyaml
+          python tests/test_skills.py
+
+  # ── Linux x86_64 .deb ─────────────────────────────────────────────────────
+  build-linux-x86_64:
+    name: Linux x86_64
+    runs-on: ubuntu-latest
+    needs: test
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install build tools
+        run: pip install build wheel
+
+      - name: Build .deb
+        run: bash scripts/build-deb.sh --arch amd64 --out-dir target/debian/
+
+      - name: Stage artifacts
+        run: |
+          mkdir -p dist
+          cp target/debian/sven-integrations_*_amd64.deb dist/sven-integrations-linux-x86_64.deb
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: linux-x86_64
+          path: dist/
+
+  # ── Linux arm64 .deb ──────────────────────────────────────────────────────
+  build-linux-aarch64:
+    name: Linux arm64
+    runs-on: ubuntu-latest
+    needs: test
+    continue-on-error: true
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up QEMU
+        uses: docker/setup-qemu-action@v3
+        with:
+          platforms: arm64
+
+      - name: Build .deb for arm64 via Docker
+        run: |
+          docker run --rm --platform linux/arm64 \
+            -v "$PWD:/workspace" \
+            -w /workspace \
+            python:3.11-slim \
+            bash -c "
+              apt-get update -qq && apt-get install -y dpkg-dev --no-install-recommends
+              pip install build wheel --quiet
+              bash scripts/build-deb.sh --arch arm64 --out-dir target/debian/
+            "
+
+      - name: Stage artifacts
+        run: |
+          mkdir -p dist
+          cp target/debian/sven-integrations_*_arm64.deb dist/sven-integrations-linux-aarch64.deb
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: linux-aarch64
+          path: dist/
+
+  # ── macOS tarball ─────────────────────────────────────────────────────────
+  build-macos:
+    name: macOS (universal)
+    runs-on: macos-latest
+    needs: test
+    continue-on-error: true
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install
+        run: pip install ".[all]" --prefix=/tmp/sven-integrations-prefix
+
+      - name: Install skills
+        run: |
+          mkdir -p /tmp/sven-integrations-prefix/share/sven/skills
+          cp -r skills/integrations /tmp/sven-integrations-prefix/share/sven/skills/
+
+      - name: Create tarball
+        run: |
+          VERSION="$(cat VERSION | tr -d '[:space:]')"
+          mkdir -p dist
+          tar -czf "dist/sven-integrations-darwin-universal.tar.gz" \
+            -C /tmp/sven-integrations-prefix .
+          echo "Built dist/sven-integrations-darwin-universal.tar.gz"
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: macos
+          path: dist/
+
+  # ── GitHub Release ────────────────────────────────────────────────────────
+  publish:
+    name: Publish GitHub Release
+    runs-on: ubuntu-latest
+    needs: [test, build-linux-x86_64]
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Download x86_64 artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: linux-x86_64
+          path: dist
+
+      - name: Download aarch64 artifact (if available)
+        uses: actions/download-artifact@v4
+        continue-on-error: true
+        with:
+          name: linux-aarch64
+          path: dist
+
+      - name: Download macOS artifact (if available)
+        uses: actions/download-artifact@v4
+        continue-on-error: true
+        with:
+          name: macos
+          path: dist
+
+      - name: Generate checksums
+        run: |
+          cd dist
+          sha256sum * > checksums.txt
+          cat checksums.txt
+
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          files: dist/*
+          generate_release_notes: true
+          fail_on_unmatched_files: false

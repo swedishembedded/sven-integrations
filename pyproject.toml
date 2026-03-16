@@ -1,0 +1,91 @@
+[build-system]
+requires = ["setuptools>=68", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "sven-integrations"
+version = "1.0.0"
+description = "Sven agent tool harnesses for controlling desktop applications via CLI"
+readme = "README.md"
+license = { file = "LICENSE" }
+requires-python = ">=3.10"
+authors = [{ name = "Sven Contributors" }]
+classifiers = [
+    "Development Status :: 4 - Beta",
+    "Intended Audience :: Developers",
+    "License :: OSI Approved :: Apache Software License",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Topic :: Software Development :: Libraries :: Python Modules",
+]
+dependencies = [
+    "click>=8.0",
+]
+
+[project.optional-dependencies]
+gimp        = ["Pillow>=10.0"]
+blender     = []
+inkscape    = []
+audacity    = []
+libreoffice = []
+obs_studio  = []
+kdenlive    = ["lxml>=4.9"]
+shotcut     = ["lxml>=4.9"]
+zoom        = []
+drawio      = []
+mermaid     = []
+anygen      = []
+comfyui     = []
+all = [
+    "Pillow>=10.0",
+    "lxml>=4.9",
+]
+dev = [
+    "pytest>=7.0",
+    "pytest-cov>=4.0",
+    "ruff>=0.4",
+    "mypy>=1.0",
+    "Pillow>=10.0",
+    "lxml>=4.9",
+    "pyyaml>=6.0",
+]
+
+[project.scripts]
+sven-integrations-gimp        = "sven_integrations.gimp.cli:main"
+sven-integrations-blender     = "sven_integrations.blender.cli:main"
+sven-integrations-inkscape    = "sven_integrations.inkscape.cli:main"
+sven-integrations-audacity    = "sven_integrations.audacity.cli:main"
+sven-integrations-libreoffice = "sven_integrations.libreoffice.cli:main"
+sven-integrations-obs-studio  = "sven_integrations.obs_studio.cli:main"
+sven-integrations-kdenlive    = "sven_integrations.kdenlive.cli:main"
+sven-integrations-shotcut     = "sven_integrations.shotcut.cli:main"
+sven-integrations-zoom        = "sven_integrations.zoom.cli:main"
+sven-integrations-drawio      = "sven_integrations.drawio.cli:main"
+sven-integrations-mermaid     = "sven_integrations.mermaid.cli:main"
+sven-integrations-anygen      = "sven_integrations.anygen.cli:main"
+sven-integrations-comfyui     = "sven_integrations.comfyui.cli:main"
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.setuptools.package-data]
+"*" = ["*.md"]
+
+[tool.pytest.ini_options]
+testpaths = ["src"]
+addopts = "-v --tb=short"
+
+[tool.ruff]
+line-length = 100
+target-version = "py310"
+
+[tool.ruff.lint]
+select = ["E", "F", "W", "I"]
+ignore = ["E501"]
+
+[tool.mypy]
+python_version = "3.10"
+warn_return_any = false
+ignore_missing_imports = true
