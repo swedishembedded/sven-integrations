@@ -1,0 +1,1 @@
+# Shotcut core modules
