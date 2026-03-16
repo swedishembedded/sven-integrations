@@ -68,12 +68,14 @@ if [[ -z "${WHEEL}" ]]; then
     exit 1
 fi
 
-# Install the wheel together with its core dependencies (click) so the
-# package is fully self-contained and needs no system Python packages
-# beyond python3 itself.
+# Install only the wheel itself, without bundling its dependencies.
+# click and other runtime deps are declared as Debian package dependencies
+# (python3-click) so dpkg resolves them from the system, avoiding file
+# conflicts with packages like python3-click already installed on the host.
 python3 -m pip install --quiet \
     --target "${SITE_PACKAGES}" \
     --no-compile \
+    --no-deps \
     "${WHEEL}"
 
 # Create wrapper scripts in /usr/bin for each entry point
@@ -124,8 +126,8 @@ Version: ${VERSION}
 Architecture: ${ARCH}
 Maintainer: Sven Contributors <team@agentsven.com>
 Installed-Size: ${INST_SIZE}
-Depends: python3 (>= 3.10)
-Recommends: python3-lxml, ffmpeg
+Depends: python3 (>= 3.10), python3-click
+Recommends: python3-lxml, python3-pil, ffmpeg
 Section: utils
 Priority: optional
 Description: Sven agent tool harnesses for desktop application control
