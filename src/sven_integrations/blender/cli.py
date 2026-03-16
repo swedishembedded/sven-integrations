@@ -98,7 +98,7 @@ def object_group() -> None:
 
 
 @object_group.command("add")
-@click.argument("type", "mesh_type")
+@click.argument("mesh_type")
 @click.option("--location", "-l", nargs=3, type=float, default=(0, 0, 0), help="X Y Z")
 @click.pass_context
 def object_add(ctx: click.Context, mesh_type: str, location: tuple[float, float, float]) -> None:
@@ -374,7 +374,7 @@ def modifier_info(name: str) -> None:
 
 
 @modifier_group.command("add")
-@click.argument("type", "modifier_type")
+@click.argument("modifier_type")
 @click.option("--object-index", "-i", type=int, default=0, show_default=True)
 @click.option("--name", "-n", default=None, help="Modifier name override.")
 @click.option(
@@ -419,7 +419,7 @@ def modifier_add(
 
 
 @modifier_group.command("remove")
-@click.argument("modifier-index", "modifier_index", type=int)
+@click.argument("modifier_index", type=int)
 @click.option("--object-index", "-i", type=int, default=0, show_default=True)
 @click.pass_context
 def modifier_remove(ctx: click.Context, modifier_index: int, object_index: int) -> None:
@@ -440,7 +440,7 @@ def modifier_remove(ctx: click.Context, modifier_index: int, object_index: int) 
 
 
 @modifier_group.command("set")
-@click.argument("modifier-index", "modifier_index", type=int)
+@click.argument("modifier_index", type=int)
 @click.argument("param")
 @click.argument("value")
 @click.option("--object-index", "-i", type=int, default=0, show_default=True)
@@ -610,7 +610,7 @@ def light_group() -> None:
 
 
 @light_group.command("add")
-@click.argument("type", "light_type")
+@click.argument("light_type")
 @click.option("--name", default=None)
 @click.option("--location", nargs=3, type=float, default=(0.0, 0.0, 5.0), metavar="X Y Z")
 @click.option("--color", nargs=3, type=float, default=(1.0, 1.0, 1.0), metavar="R G B")
@@ -698,7 +698,7 @@ def animation_group() -> None:
 
 
 @animation_group.command("keyframe")
-@click.argument("object-index", "object_index", type=int)
+@click.argument("object_index", type=int)
 @click.argument("frame", type=int)
 @click.argument("prop")
 @click.argument("value")
@@ -731,7 +731,7 @@ def animation_keyframe(
 
 
 @animation_group.command("remove-keyframe")
-@click.argument("object-index", "object_index", type=int)
+@click.argument("object_index", type=int)
 @click.argument("frame", type=int)
 @click.option("--prop", default=None, help="Property name; omit to remove all at frame.")
 @click.pass_context
@@ -785,7 +785,7 @@ def animation_fps(ctx: click.Context, fps: int) -> None:
 
 
 @animation_group.command("list-keyframes")
-@click.argument("object-index", "object_index", type=int)
+@click.argument("object_index", type=int)
 @click.option("--prop", default=None, help="Filter by property name.")
 @click.pass_context
 def animation_list_keyframes(

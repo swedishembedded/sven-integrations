@@ -68,9 +68,12 @@ if [[ -z "${WHEEL}" ]]; then
     exit 1
 fi
 
+# Install the wheel together with its core dependencies (click) so the
+# package is fully self-contained and needs no system Python packages
+# beyond python3 itself.
 python3 -m pip install --quiet \
     --target "${SITE_PACKAGES}" \
-    --no-deps \
+    --no-compile \
     "${WHEEL}"
 
 # Create wrapper scripts in /usr/bin for each entry point
@@ -121,8 +124,8 @@ Version: ${VERSION}
 Architecture: ${ARCH}
 Maintainer: Sven Contributors <team@agentsven.com>
 Installed-Size: ${INST_SIZE}
-Depends: python3 (>= 3.10), python3-click (>= 8.0)
-Recommends: python3-lxml
+Depends: python3 (>= 3.10)
+Recommends: python3-lxml, ffmpeg
 Section: utils
 Priority: optional
 Description: Sven agent tool harnesses for desktop application control
