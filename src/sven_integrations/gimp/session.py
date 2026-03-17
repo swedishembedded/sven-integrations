@@ -46,6 +46,7 @@ class GimpSession(BaseSession):
         height: int,
         color_mode: str = "RGB",
         dpi: float = 72.0,
+        name: str = "untitled",
     ) -> GimpProject:
         """Create a blank project and persist the session."""
         proj = GimpProject(
@@ -53,6 +54,7 @@ class GimpSession(BaseSession):
             height=height,
             color_mode=color_mode,
             dpi=dpi,
+            name=name,
         )
         self.project = proj
         self.save()

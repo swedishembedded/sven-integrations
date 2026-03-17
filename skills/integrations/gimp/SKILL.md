@@ -21,17 +21,21 @@ with Pillow-based rendering and optional GIMP backend for advanced operations.
 # Create a new 1920×1080 project
 sven-integrations-gimp --json project new -o /tmp/project.json --width 1920 --height 1080
 
-# Add a background layer from file
-sven-integrations-gimp --json -p /tmp/project.json layer add-from-file photo.jpg --name Background
+# Add a background layer from file (-p works before or after subcommand)
+sven-integrations-gimp --json layer add-from-file photo.jpg --name Background -p /tmp/project.json
 
 # Add a text layer
-sven-integrations-gimp --json -p /tmp/project.json draw text --text "Hello World" --layer 0 --x 100 --y 100
+sven-integrations-gimp --json draw text --text "Hello World" --layer 0 --x 100 --y 100 -p /tmp/project.json
+
+# Draw shapes (rect: --x --y --w --h; ellipse: --cx --cy --rx --ry; circle: --cx --cy --r; line: --x1 --y1 --x2 --y2)
+sven-integrations-gimp --json draw rect --x 10 --y 20 --w 100 --h 50 -p /tmp/project.json
+sven-integrations-gimp --json draw shape --type circle --cx 100 --cy 100 --r 50 -p /tmp/project.json
 
 # Apply brightness filter
-sven-integrations-gimp --json -p /tmp/project.json filter add brightness --layer 0 --param factor=1.2
+sven-integrations-gimp --json filter add brightness --layer 0 --param factor=1.2 -p /tmp/project.json
 
-# Render to PNG
-sven-integrations-gimp --json -p /tmp/project.json export render output.png
+# Render to PNG (use --overwrite to replace existing)
+sven-integrations-gimp --json export render output.png --overwrite -p /tmp/project.json
 ```
 
 ## Command groups
@@ -97,11 +101,22 @@ sven-integrations-gimp --json -p /tmp/project.json export render output.png
 `portrait_1080` (1080×1920), `a4_300dpi` (2480×3508), `twitter_header`,
 `youtube_thumbnail`, `facebook_cover`, `instagram_post`
 
+### draw
+| Command | Description |
+|---------|-------------|
+| `text` | Draw text on a layer (--text, --x, --y, --font, --size, --color) |
+| `rect` | Draw a rectangle (--x1 --y1 --x2 --y2 OR --x --y --w --h) |
+| `ellipse` | Draw an ellipse (--cx --cy --rx --ry) |
+| `circle` | Draw a circle (--cx --cy --r) |
+| `line` | Draw a line (--x1 --y1 --x2 --y2, --stroke, --width) |
+| `shape` | Draw a shape (--type ellipse\|circle\|rect\|line, then shape-specific options) |
+
 ## For agents
 
 - `--json` flag on every command for structured output
-- `--project` / `-p` flag to specify project file path
+- `--project` / `-p` flag to specify project file path (works anywhere: before subcommand or at end)
 - `--overwrite` flag on render to replace existing output file
+- `project new` supports `--name` / `-n` for project name
 - Filter names: `brightness`, `contrast`, `saturation`, `sharpness`,
   `blur`, `gaussian_blur`, `edge_enhance`, `grayscale`, `sepia`,
   `invert`, `flip_h`, `flip_v`, `rotate`, `crop_filter`, `resize_filter`

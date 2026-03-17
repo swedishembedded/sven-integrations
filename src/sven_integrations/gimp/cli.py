@@ -34,6 +34,21 @@ def _maybe_save_project_path(ctx: click.Context, sess: GimpSession) -> None:
         )
 
 
+def _merge_project_path(ctx: click.Context, project_path: Path | None) -> None:
+    """Merge project_path from subcommand into ctx and load project if file exists."""
+    if project_path is not None:
+        ctx.obj["project_path"] = Path(project_path)
+        if Path(project_path).exists():
+            sess = GimpSession.open_or_create(ctx.obj["session_name"])
+            try:
+                data = json.loads(Path(project_path).read_text(encoding="utf-8"))
+                sess.project = GimpProject.from_dict(data)
+                sess.data["project_path"] = str(project_path)
+                sess.save()
+            except (json.JSONDecodeError, KeyError):
+                pass
+
+
 # ---------------------------------------------------------------------------
 # Root group
 
@@ -119,8 +134,17 @@ def cmd_open(ctx: click.Context, path: str) -> None:
 
 
 @gimp_cli.group("project")
-def project_group() -> None:
+@click.option(
+    "--project", "-p",
+    "project_path",
+    type=click.Path(path_type=Path, exists=False),
+    default=None,
+    help="Project JSON path. Works anywhere in command.",
+)
+@click.pass_context
+def project_group(ctx: click.Context, project_path: Path | None) -> None:
     """Project management commands (create new canvas, open, save, info)."""
+    _merge_project_path(ctx, project_path)
 
 
 @project_group.command("new")
@@ -152,6 +176,12 @@ def project_group() -> None:
     help="Image resolution in DPI.",
 )
 @click.option(
+    "--name", "-n",
+    default="untitled",
+    show_default=True,
+    help="Project name.",
+)
+@click.option(
     "--output", "-o",
     type=click.Path(path_type=Path),
     default=None,
@@ -164,17 +194,19 @@ def project_new(
     height: int,
     mode: str,
     dpi: float,
+    name: str,
     output: Path | None,
 ) -> None:
     """Create a new blank GIMP image (canvas)."""
     sess = GimpSession.open_or_create(ctx.obj["session_name"])
-    proj = sess.new_project(width, height, color_mode=mode, dpi=dpi)
+    proj = sess.new_project(width, height, color_mode=mode, dpi=dpi, name=name)
     payload: dict = {
         "ok": True,
         "width": width,
         "height": height,
         "color_mode": mode,
         "dpi": dpi,
+        "name": name,
         "project": proj.to_dict(),
     }
     if output is not None:
@@ -274,8 +306,17 @@ def project_json(ctx: click.Context) -> None:
 
 
 @gimp_cli.group("export")
-def export_group() -> None:
+@click.option(
+    "--project", "-p",
+    "project_path",
+    type=click.Path(path_type=Path, exists=False),
+    default=None,
+    help="Project JSON path. Works anywhere in command.",
+)
+@click.pass_context
+def export_group(ctx: click.Context, project_path: Path | None) -> None:
     """Export/render commands."""
+    _merge_project_path(ctx, project_path)
 
 
 @export_group.command("presets")
@@ -305,6 +346,7 @@ def export_preset_info(name: str) -> None:
 @click.option("--overwrite", is_flag=True, help="Overwrite existing file")
 @click.option("--quality", "-q", type=int, default=None, help="Quality override (jpeg/webp)")
 @click.option("--format", "fmt", type=str, default=None, help="Format override")
+@click.option("--project", "-p", "project_path", type=click.Path(path_type=Path, exists=False), default=None)
 @click.pass_context
 def export_render(
     ctx: click.Context,
@@ -313,8 +355,10 @@ def export_render(
     overwrite: bool,
     quality: int | None,
     fmt: str | None,
+    project_path: Path | None,
 ) -> None:
     """Render the project to an image file (builds GIMP export command)."""
+    _merge_project_path(ctx, project_path)
     from pathlib import Path
     p = Path(output_path)
     if p.exists() and not overwrite:
@@ -349,11 +393,21 @@ def export_render(
 
 # ---------------------------------------------------------------------------
 # layer subgroup
+# ---------------------------------------------------------------------------
 
 
 @gimp_cli.group("layer")
-def layer_group() -> None:
+@click.option(
+    "--project", "-p",
+    "project_path",
+    type=click.Path(path_type=Path, exists=False),
+    default=None,
+    help="Project JSON path. Works anywhere in command.",
+)
+@click.pass_context
+def layer_group(ctx: click.Context, project_path: Path | None) -> None:
     """Layer management commands."""
+    _merge_project_path(ctx, project_path)
 
 
 @layer_group.command("add")
@@ -377,6 +431,7 @@ def layer_add(ctx: click.Context, name: str, width: int, height: int, mode: str)
 @click.option("--position", type=int, default=None, help="Stack position (0=top)")
 @click.option("--opacity", type=float, default=1.0, help="Layer opacity 0.0-1.0")
 @click.option("--mode", default="normal", help="Blend mode")
+@click.option("--project", "-p", "project_path", type=click.Path(path_type=Path, exists=False), default=None, help="Project JSON path")
 @click.pass_context
 def layer_add_from_file(
     ctx: click.Context,
@@ -385,8 +440,10 @@ def layer_add_from_file(
     position: int | None,
     opacity: float,
     mode: str,
+    project_path: Path | None,
 ) -> None:
     """Add a layer from an image file."""
+    _merge_project_path(ctx, project_path)
     sess = GimpSession.open_or_create(ctx.obj["session_name"])
     proj = sess.project
     if proj is None:
@@ -414,6 +471,7 @@ def layer_add_from_file(
 @click.option("--fill", default="transparent", help="Fill: transparent, white, black, or hex")
 @click.option("--opacity", type=float, default=1.0)
 @click.option("--position", type=int, default=None, help="Stack position (0=top)")
+@click.option("--project", "-p", "project_path", type=click.Path(path_type=Path, exists=False), default=None)
 @click.pass_context
 def layer_new(
     ctx: click.Context,
@@ -423,8 +481,10 @@ def layer_new(
     fill: str,
     opacity: float,
     position: int | None,
+    project_path: Path | None,
 ) -> None:
     """Create a new blank layer."""
+    _merge_project_path(ctx, project_path)
     sess = GimpSession.open_or_create(ctx.obj["session_name"])
     proj = sess.project
     if proj is None:
@@ -625,8 +685,17 @@ def layer_opacity(ctx: click.Context, layer_id: int, value: float) -> None:
 
 
 @gimp_cli.group("filter")
-def filter_group() -> None:
+@click.option(
+    "--project", "-p",
+    "project_path",
+    type=click.Path(path_type=Path, exists=False),
+    default=None,
+    help="Project JSON path. Works anywhere in command.",
+)
+@click.pass_context
+def filter_group(ctx: click.Context, project_path: Path | None) -> None:
     """Image filter commands."""
+    _merge_project_path(ctx, project_path)
 
 
 _FILTER_REGISTRY = [
@@ -670,9 +739,11 @@ def filter_info(name: str) -> None:
 @click.argument("name")
 @click.option("--layer", "-l", "layer_index", type=int, default=0, help="Layer index")
 @click.option("--param", "params", multiple=True, help="Parameter: key=value")
+@click.option("--project", "-p", "project_path", type=click.Path(path_type=Path, exists=False), default=None)
 @click.pass_context
-def filter_add(ctx: click.Context, name: str, layer_index: int, params: tuple[str, ...]) -> None:
+def filter_add(ctx: click.Context, name: str, layer_index: int, params: tuple[str, ...], project_path: Path | None) -> None:
     """Add a filter to a layer (recorded in project; applied on export)."""
+    _merge_project_path(ctx, project_path)
     sess = GimpSession.open_or_create(ctx.obj["session_name"])
     proj = sess.project
     if proj is None:
@@ -703,9 +774,11 @@ def filter_add(ctx: click.Context, name: str, layer_index: int, params: tuple[st
 @filter_group.command("remove")
 @click.argument("filter_index", type=int)
 @click.option("--layer", "-l", "layer_index", type=int, default=0)
+@click.option("--project", "-p", "project_path", type=click.Path(path_type=Path, exists=False), default=None)
 @click.pass_context
-def filter_remove(ctx: click.Context, filter_index: int, layer_index: int) -> None:
+def filter_remove(ctx: click.Context, filter_index: int, layer_index: int, project_path: Path | None) -> None:
     """Remove a filter by index."""
+    _merge_project_path(ctx, project_path)
     emit_result(
         f"Removed filter {filter_index} from layer {layer_index}",
         {"ok": True, "filter_index": filter_index, "layer": layer_index},
@@ -717,9 +790,11 @@ def filter_remove(ctx: click.Context, filter_index: int, layer_index: int) -> No
 @click.argument("param")
 @click.argument("value")
 @click.option("--layer", "-l", "layer_index", type=int, default=0)
+@click.option("--project", "-p", "project_path", type=click.Path(path_type=Path, exists=False), default=None)
 @click.pass_context
-def filter_set(ctx: click.Context, filter_index: int, param: str, value: str, layer_index: int) -> None:
+def filter_set(ctx: click.Context, filter_index: int, param: str, value: str, layer_index: int, project_path: Path | None) -> None:
     """Set a filter parameter."""
+    _merge_project_path(ctx, project_path)
     try:
         v = float(value) if "." in value else int(value)
     except ValueError:
@@ -732,9 +807,11 @@ def filter_set(ctx: click.Context, filter_index: int, param: str, value: str, la
 
 @filter_group.command("list")
 @click.option("--layer", "-l", "layer_index", type=int, default=0)
+@click.option("--project", "-p", "project_path", type=click.Path(path_type=Path, exists=False), default=None)
 @click.pass_context
-def filter_list(ctx: click.Context, layer_index: int) -> None:
+def filter_list(ctx: click.Context, layer_index: int, project_path: Path | None) -> None:
     """List filters on a layer."""
+    _merge_project_path(ctx, project_path)
     sess = GimpSession.open_or_create(ctx.obj["session_name"])
     proj = sess.project
     if proj is None:
@@ -807,8 +884,17 @@ def filter_curves(channel: str, points: tuple[int, ...]) -> None:
 
 
 @gimp_cli.group("canvas")
-def canvas_group() -> None:
+@click.option(
+    "--project", "-p",
+    "project_path",
+    type=click.Path(path_type=Path, exists=False),
+    default=None,
+    help="Project JSON path. Works anywhere in command.",
+)
+@click.pass_context
+def canvas_group(ctx: click.Context, project_path: Path | None) -> None:
     """Canvas geometry commands."""
+    _merge_project_path(ctx, project_path)
 
 
 @canvas_group.command("info")
@@ -922,8 +1008,17 @@ def canvas_rotate(angle: float, auto_crop: bool) -> None:
 
 
 @gimp_cli.group("draw")
-def draw_group() -> None:
+@click.option(
+    "--project", "-p",
+    "project_path",
+    type=click.Path(path_type=Path, exists=False),
+    default=None,
+    help="Project JSON path. Works anywhere in command.",
+)
+@click.pass_context
+def draw_group(ctx: click.Context, project_path: Path | None) -> None:
     """Drawing operations (stored as layer metadata)."""
+    _merge_project_path(ctx, project_path)
 
 
 @draw_group.command("text")
@@ -934,6 +1029,7 @@ def draw_group() -> None:
 @click.option("--font", default="Arial")
 @click.option("--size", type=int, default=24)
 @click.option("--color", default="#000000")
+@click.option("--project", "-p", "project_path", type=click.Path(path_type=Path, exists=False), default=None)
 @click.pass_context
 def draw_text(
     ctx: click.Context,
@@ -944,8 +1040,10 @@ def draw_text(
     font: str,
     size: int,
     color: str,
+    project_path: Path | None,
 ) -> None:
     """Draw text on a layer (stored as text layer metadata)."""
+    _merge_project_path(ctx, project_path)
     sess = GimpSession.open_or_create(ctx.obj["session_name"])
     proj = sess.project
     if proj is None:
@@ -964,26 +1062,45 @@ def draw_text(
 
 @draw_group.command("rect")
 @click.option("--layer", "-l", "layer_index", type=int, default=0)
-@click.option("--x1", type=int, required=True)
-@click.option("--y1", type=int, required=True)
-@click.option("--x2", type=int, required=True)
-@click.option("--y2", type=int, required=True)
+@click.option("--x1", type=int, default=None, help="Left edge (or use --x with --w)")
+@click.option("--y1", type=int, default=None, help="Top edge (or use --y with --h)")
+@click.option("--x2", type=int, default=None, help="Right edge")
+@click.option("--y2", type=int, default=None, help="Bottom edge")
+@click.option("--x", type=int, default=None, help="Left edge (alternative to x1, use with --w)")
+@click.option("--y", type=int, default=None, help="Top edge (alternative to y1, use with --h)")
+@click.option("--w", "width", type=int, default=None, help="Width (use with --x --y)")
+@click.option("--h", "height", type=int, default=None, help="Height (use with --x --y)")
 @click.option("--fill", default=None)
 @click.option("--outline", default=None)
-@click.option("--width", "line_width", type=int, default=1)
+@click.option("--stroke-width", "line_width", type=int, default=1, help="Outline width")
+@click.option("--project", "-p", "project_path", type=click.Path(path_type=Path, exists=False), default=None)
 @click.pass_context
 def draw_rect(
     ctx: click.Context,
     layer_index: int,
-    x1: int,
-    y1: int,
-    x2: int,
-    y2: int,
+    x1: int | None,
+    y1: int | None,
+    x2: int | None,
+    y2: int | None,
+    x: int | None,
+    y: int | None,
+    width: int | None,
+    height: int | None,
     fill: str | None,
     outline: str | None,
     line_width: int,
+    project_path: Path | None,
 ) -> None:
-    """Draw a rectangle (stored as drawing operation)."""
+    """Draw a rectangle (stored as drawing operation). Use --x1 --y1 --x2 --y2 or --x --y --w --h."""
+    _merge_project_path(ctx, project_path)
+    if (x1, y1, x2, y2).count(None) == 0:
+        pass  # use x1,y1,x2,y2
+    elif x is not None and y is not None and width is not None and height is not None:
+        x1, y1 = x, y
+        x2, y2 = x + width, y + height
+    else:
+        emit_error("Use either --x1 --y1 --x2 --y2 or --x --y --w --h")
+        return
     sess = GimpSession.open_or_create(ctx.obj["session_name"])
     proj = sess.project
     if proj is None:
@@ -998,14 +1115,192 @@ def draw_rect(
     )
 
 
+@draw_group.command("ellipse")
+@click.option("--layer", "-l", "layer_index", type=int, default=0)
+@click.option("--cx", type=int, required=True, help="Center X")
+@click.option("--cy", type=int, required=True, help="Center Y")
+@click.option("--rx", type=int, required=True, help="Radius X (horizontal)")
+@click.option("--ry", type=int, required=True, help="Radius Y (vertical)")
+@click.option("--fill", default=None)
+@click.option("--outline", default=None)
+@click.option("--project", "-p", "project_path", type=click.Path(path_type=Path, exists=False), default=None)
+@click.pass_context
+def draw_ellipse(
+    ctx: click.Context,
+    layer_index: int,
+    cx: int,
+    cy: int,
+    rx: int,
+    ry: int,
+    fill: str | None,
+    outline: str | None,
+    project_path: Path | None,
+) -> None:
+    """Draw an ellipse (stored as drawing operation)."""
+    _merge_project_path(ctx, project_path)
+    sess = GimpSession.open_or_create(ctx.obj["session_name"])
+    proj = sess.project
+    if proj is None:
+        emit_error("No project in session.")
+        return
+    if layer_index < 0 or layer_index >= len(proj.layers):
+        emit_error(f"Layer index {layer_index} out of range.")
+        return
+    emit_result(
+        f"Ellipse drawn on layer {layer_index}",
+        {"ok": True, "layer": layer_index, "center": (cx, cy), "radius": (rx, ry)},
+    )
+
+
+@draw_group.command("circle")
+@click.option("--layer", "-l", "layer_index", type=int, default=0)
+@click.option("--cx", type=int, required=True, help="Center X")
+@click.option("--cy", type=int, required=True, help="Center Y")
+@click.option("--r", "radius", type=int, required=True, help="Radius")
+@click.option("--fill", default=None)
+@click.option("--outline", default=None)
+@click.option("--project", "-p", "project_path", type=click.Path(path_type=Path, exists=False), default=None)
+@click.pass_context
+def draw_circle(
+    ctx: click.Context,
+    layer_index: int,
+    cx: int,
+    cy: int,
+    radius: int,
+    fill: str | None,
+    outline: str | None,
+    project_path: Path | None,
+) -> None:
+    """Draw a circle (ellipse with equal radii)."""
+    _merge_project_path(ctx, project_path)
+    ctx.invoke(
+        draw_ellipse,
+        layer_index=layer_index,
+        cx=cx,
+        cy=cy,
+        rx=radius,
+        ry=radius,
+        fill=fill,
+        outline=outline,
+        project_path=project_path,
+    )
+
+
+@draw_group.command("shape")
+@click.option("--type", "shape_type", type=click.Choice(["ellipse", "circle", "rect", "line"]), required=True)
+@click.option("--layer", "-l", "layer_index", type=int, default=0)
+@click.option("--cx", type=int, default=None)
+@click.option("--cy", type=int, default=None)
+@click.option("--rx", type=int, default=None)
+@click.option("--ry", type=int, default=None)
+@click.option("--r", "radius", type=int, default=None)
+@click.option("--x", type=int, default=None)
+@click.option("--y", type=int, default=None)
+@click.option("--w", "width", type=int, default=None)
+@click.option("--h", "height", type=int, default=None)
+@click.option("--x1", type=int, default=None)
+@click.option("--y1", type=int, default=None)
+@click.option("--x2", type=int, default=None)
+@click.option("--y2", type=int, default=None)
+@click.option("--fill", default=None)
+@click.option("--outline", default=None)
+@click.option("--stroke", default=None)
+@click.option("--project", "-p", "project_path", type=click.Path(path_type=Path, exists=False), default=None)
+@click.pass_context
+def draw_shape(
+    ctx: click.Context,
+    shape_type: str,
+    layer_index: int,
+    cx: int | None,
+    cy: int | None,
+    rx: int | None,
+    ry: int | None,
+    radius: int | None,
+    x: int | None,
+    y: int | None,
+    width: int | None,
+    height: int | None,
+    x1: int | None,
+    y1: int | None,
+    x2: int | None,
+    y2: int | None,
+    fill: str | None,
+    outline: str | None,
+    stroke: str | None,
+    project_path: Path | None,
+) -> None:
+    """Draw a shape (ellipse, circle, rect, or line). Dispatches to the specific draw command."""
+    _merge_project_path(ctx, project_path)
+    if shape_type == "ellipse" and cx is not None and cy is not None and rx is not None and ry is not None:
+        ctx.invoke(draw_ellipse, layer_index=layer_index, cx=cx, cy=cy, rx=rx, ry=ry, fill=fill, outline=outline, project_path=project_path)
+    elif shape_type == "circle" and cx is not None and cy is not None and radius is not None:
+        ctx.invoke(draw_circle, layer_index=layer_index, cx=cx, cy=cy, radius=radius, fill=fill, outline=outline, project_path=project_path)
+    elif shape_type == "rect" and x is not None and y is not None and width is not None and height is not None:
+        ctx.invoke(draw_rect, layer_index=layer_index, x=x, y=y, width=width, height=height, fill=fill, outline=outline, project_path=project_path)
+    elif shape_type == "line" and x1 is not None and y1 is not None and x2 is not None and y2 is not None:
+        ctx.invoke(draw_line, layer_index=layer_index, x1=x1, y1=y1, x2=x2, y2=y2, stroke=stroke or outline, project_path=project_path)
+    else:
+        emit_error(
+            f"Shape '{shape_type}' requires: "
+            "ellipse: --cx --cy --rx --ry; circle: --cx --cy --r; "
+            "rect: --x --y --w --h; line: --x1 --y1 --x2 --y2"
+        )
+
+
+@draw_group.command("line")
+@click.option("--layer", "-l", "layer_index", type=int, default=0)
+@click.option("--x1", type=int, required=True)
+@click.option("--y1", type=int, required=True)
+@click.option("--x2", type=int, required=True)
+@click.option("--y2", type=int, required=True)
+@click.option("--stroke", default=None, help="Stroke color")
+@click.option("--width", type=int, default=1, help="Line width")
+@click.option("--project", "-p", "project_path", type=click.Path(path_type=Path, exists=False), default=None)
+@click.pass_context
+def draw_line(
+    ctx: click.Context,
+    layer_index: int,
+    x1: int,
+    y1: int,
+    x2: int,
+    y2: int,
+    stroke: str | None,
+    width: int,
+    project_path: Path | None,
+) -> None:
+    """Draw a line (stored as drawing operation)."""
+    _merge_project_path(ctx, project_path)
+    sess = GimpSession.open_or_create(ctx.obj["session_name"])
+    proj = sess.project
+    if proj is None:
+        emit_error("No project in session.")
+        return
+    if layer_index < 0 or layer_index >= len(proj.layers):
+        emit_error(f"Layer index {layer_index} out of range.")
+        return
+    emit_result(
+        f"Line drawn on layer {layer_index}",
+        {"ok": True, "layer": layer_index, "from": (x1, y1), "to": (x2, y2)},
+    )
+
+
 # ---------------------------------------------------------------------------
 # session subgroup
 # ---------------------------------------------------------------------------
 
 
 @gimp_cli.group("session")
-def session_group() -> None:
+@click.option(
+    "--project", "-p",
+    "project_path",
+    type=click.Path(path_type=Path, exists=False),
+    default=None,
+    help="Project JSON path. Works anywhere in command.",
+)
+@click.pass_context
+def session_group(ctx: click.Context, project_path: Path | None) -> None:
     """Session management commands."""
+    _merge_project_path(ctx, project_path)
 
 
 @session_group.command("undo")

@@ -76,6 +76,7 @@ class GimpProject:
     height: int
     color_mode: str = "RGB"
     dpi: float = 72.0
+    name: str = "untitled"
     layers: list[LayerInfo] = field(default_factory=list)
     history: list[str] = field(default_factory=list)
     active_layer_index: int = 0
@@ -205,7 +206,7 @@ class GimpProject:
     # Serialisation
 
     def to_dict(self) -> dict[str, Any]:
-        return {
+        d: dict[str, Any] = {
             "width": self.width,
             "height": self.height,
             "color_mode": self.color_mode,
@@ -214,6 +215,9 @@ class GimpProject:
             "history": list(self.history),
             "active_layer_index": self.active_layer_index,
         }
+        if self.name != "untitled":
+            d["name"] = self.name
+        return d
 
     @classmethod
     def from_dict(cls, data: dict[str, Any]) -> "GimpProject":
@@ -222,6 +226,7 @@ class GimpProject:
             height=int(data["height"]),
             color_mode=str(data.get("color_mode", "RGB")),
             dpi=float(data.get("dpi", 72.0)),
+            name=str(data.get("name", "untitled")),
             layers=[LayerInfo.from_dict(lyr) for lyr in data.get("layers", [])],
             history=list(data.get("history", [])),
             active_layer_index=int(data.get("active_layer_index", 0)),
