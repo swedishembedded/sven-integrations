@@ -76,6 +76,16 @@ def project_group() -> None:
     """Project management commands."""
 
 
+_PROFILE_PRESETS: dict[str, tuple[int, int, int]] = {
+    "hd1080p30": (1920, 1080, 30),
+    "hd1080p25": (1920, 1080, 25),
+    "hd720p30": (1280, 720, 30),
+    "hd720p25": (1280, 720, 25),
+    "hdv_720_25p": (1280, 720, 25),
+    "hdv_1080_25p": (1920, 1080, 25),
+}
+
+
 @project_group.command("new")
 @click.option("--name", default="Untitled", show_default=True, help="Project name.")
 @click.option("--profile", default="hdv_720_25p", show_default=True, help="MLT profile name.")
@@ -87,6 +97,11 @@ def project_new(ctx: click.Context, name: str, profile: str, output_path: str | 
     from pathlib import Path
     sess = _get_session(ctx.obj["session"])
     proj = KdenliveProject(profile_name=profile)
+    if profile in _PROFILE_PRESETS:
+        w, h, fps = _PROFILE_PRESETS[profile]
+        proj.width = w
+        proj.height = h
+        proj.fps_num = fps
     _save_project(sess, proj)
     if output_path is not None:
         p = Path(output_path)
@@ -413,20 +428,36 @@ def cmd_render(
     start_s: Optional[float],
     end_s: Optional[float],
 ) -> None:
-    """Render the project to a file."""
+    """Render the project to a file. Saves to temp MLT if project not yet saved."""
+    import tempfile
     sess = _get_session(ctx.obj["session"])
     proj = _load_project(sess)
     if start_s is not None and end_s is not None:
         render_mod.set_render_range(start_s, end_s)
+    mlt_path = proj.project_path
+    temp_mlt = None
+    if not mlt_path:
+        fd, temp_mlt = tempfile.mkstemp(suffix=".mlt")
+        import os
+        os.close(fd)
+        tl_mod.save_project_to_xml(proj, temp_mlt)
+        mlt_path = temp_mlt
     try:
         result = render_mod.render_to_file(
             output,
             profile=profile,
-            mlt_path=proj.project_path,
+            mlt_path=mlt_path,
         )
+        emit_result(f"Rendered to {output}", result)
     except render_mod.RenderError as exc:
         emit_error(str(exc))
-    emit_result(f"Rendered to {output}", result)
+    finally:
+        if temp_mlt:
+            import os
+            try:
+                os.unlink(temp_mlt)
+            except OSError:
+                pass
 
 
 # ---------------------------------------------------------------------------
@@ -713,6 +744,23 @@ def export_xml(ctx: click.Context, output: str) -> None:
     except Exception as exc:
         emit_error(str(exc))
     emit_result(f"Exported to {output}", {"status": "ok", "path": output})
+
+
+@export_grp.command("render")
+@click.option("--output", "-o", required=True, help="Output file path.")
+@click.option("--profile", "-p", "profile_name", default=None, help="Render profile name.")
+@click.option("--start", "start_s", type=float, default=None, help="Start time (seconds).")
+@click.option("--end", "end_s", type=float, default=None, help="End time (seconds).")
+@click.pass_context
+def export_render(
+    ctx: click.Context,
+    output: str,
+    profile_name: Optional[str],
+    start_s: Optional[float],
+    end_s: Optional[float],
+) -> None:
+    """Render the project to a video file (alias for top-level render)."""
+    ctx.invoke(cmd_render, output=output, profile=profile_name, start_s=start_s, end_s=end_s)
 
 
 @export_grp.command("presets")

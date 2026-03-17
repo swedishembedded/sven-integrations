@@ -133,7 +133,7 @@ class KdenliveProject:
     # Serialisation
 
     def to_dict(self) -> dict[str, Any]:
-        return {
+        out: dict[str, Any] = {
             "project_path": self.project_path,
             "profile_name": self.profile_name,
             "fps_num": self.fps_num,
@@ -142,6 +142,14 @@ class KdenliveProject:
             "height": self.height,
             "tracks": [t.to_dict() for t in self.tracks],
         }
+        # Prefer _bin_clips (populated by bin module) then project.data
+        bin_clips = getattr(self, "_bin_clips", None)
+        if not bin_clips:
+            data = getattr(self, "data", None) or {}
+            bin_clips = data.get("bin_clips")
+        if bin_clips:
+            out["bin_clips"] = list(bin_clips)
+        return out
 
     @classmethod
     def from_dict(cls, d: dict[str, Any]) -> "KdenliveProject":
@@ -154,6 +162,8 @@ class KdenliveProject:
             height=int(d.get("height", 1080)),
         )
         proj.tracks = [TimelineTrack.from_dict(t) for t in d.get("tracks", [])]
+        if d.get("bin_clips"):
+            proj.data = {"bin_clips": d["bin_clips"]}  # type: ignore[attr-defined]
         return proj
 
 

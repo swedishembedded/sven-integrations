@@ -7,6 +7,7 @@ import xml.etree.ElementTree as ET
 from typing import Any
 
 from ..project import KdenliveProject, TimelineClip, TimelineTrack
+from . import bin as bin_mod
 
 # ---------------------------------------------------------------------------
 # Public timeline API
@@ -219,8 +220,24 @@ def load_project_from_xml(path: str) -> KdenliveProject:
 
 
 def save_project_to_xml(project: KdenliveProject, path: str) -> None:
-    """Write a KdenliveProject to a minimal .kdenlive XML file."""
+    """Write a KdenliveProject to a valid .kdenlive/.mlt XML file.
+
+    Includes producers (from bin), playlists (tracks), and tractor.
+    """
     root = ET.Element("mlt", attrib={"version": "7.0", "LC_NUMERIC": "C"})
+
+    # Producers from bin (required for melt to resolve clip references)
+    clips = bin_mod.list_clips(project).get("clips", [])
+    fps = project.fps_num / max(project.fps_den, 1)
+    for clip in clips:
+        attrs = bin_mod.build_mlt_producer(clip)
+        if clip.get("duration_seconds") is not None:
+            out_frame = int(clip["duration_seconds"] * fps) - 1
+            attrs["out"] = str(max(0, out_frame))
+        # MLT producer: id, in, out, mlt_service as attrs; resource as property
+        elem_attrs = {k: str(v) for k, v in attrs.items() if k not in ("resource", "kdenlive:clipname", "kdenlive:clip_type")}
+        prod = ET.SubElement(root, "producer", elem_attrs)
+        ET.SubElement(prod, "property", attrib={"name": "resource"}).text = clip.get("source_path", "")
 
     # Profile
     ET.SubElement(
@@ -247,13 +264,15 @@ def save_project_to_xml(project: KdenliveProject, path: str) -> None:
         playlist = ET.SubElement(root, "playlist", attrib={"id": track.track_id})
         fps = project.fps_num / max(project.fps_den, 1)
         for clip in track.clips:
+            in_f = int(clip.in_point * fps)
+            out_f = max(int(clip.out_point * fps) - 1, in_f)  # MLT out is inclusive
             ET.SubElement(
                 playlist,
                 "entry",
                 attrib={
                     "producer": clip.bin_id,
-                    "in": str(int(clip.in_point * fps)),
-                    "out": str(int(clip.out_point * fps)),
+                    "in": str(in_f),
+                    "out": str(out_f),
                 },
             )
         ET.SubElement(tractor, "track", attrib={"producer": track.track_id})

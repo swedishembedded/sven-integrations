@@ -88,6 +88,20 @@ def test_project_to_dict_round_trip() -> None:
     assert proj2.tracks[0].track_id == "v1"
 
 
+def test_project_bin_clips_persist_round_trip() -> None:
+    """Bin clips must survive to_dict/from_dict for MLT export."""
+    proj = make_project()
+    bin_mod.import_clip(proj, "color:red", clip_type="color", duration=3.0)
+    d = proj.to_dict()
+    assert "bin_clips" in d
+    assert len(d["bin_clips"]) == 1
+    assert d["bin_clips"][0]["clip_id"] == "C001"
+    proj2 = KdenliveProject.from_dict(d)
+    clips = bin_mod.list_clips(proj2)
+    assert clips["count"] == 1
+    assert clips["clips"][0]["clip_id"] == "C001"
+
+
 # ---------------------------------------------------------------------------
 # Timeline CRUD
 
