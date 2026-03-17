@@ -5,7 +5,7 @@ description: |
   configure cameras, animate objects, or render images with Blender. Trigger phrases:
   "create 3D scene", "add 3D object", "render 3D", "Blender scene", "set material",
   "blender render", "3D model", "add cube", "add sphere", "lighting".
-version: 2.0.0
+version: 2.1.0
 sven:
   requires_bins: [sven-integrations-blender]
 ---
@@ -49,6 +49,8 @@ ls -lh /tmp/blender_render.png
 5. **Materials use RGBA floats (0.0–1.0)** — `--color R G B A` where all values are 0.0–1.0.
 6. **`scene frame-range` and `scene fps` set scene parameters** — call these before rendering.
 7. **`object list` shows what's tracked in the session** — use to verify objects before rendering.
+8. **Camera: use `camera add`** with `--location`, `--rotation`, `--focal-length`, `--active`. Do **not** use `camera set --location` — that option does not exist.
+9. **Light: use `--power`** (not `--energy`) for intensity: `light add POINT --power 800 --location 5 5 5`.
 
 ## Command groups
 
@@ -73,8 +75,8 @@ ls -lh /tmp/blender_render.png
 | Command | Description | Key flags |
 |---------|-------------|-----------|
 | `create NAME` | Create Principled BSDF material | `--color R G B A` (floats 0–1) |
-| `assign OBJECT_NAME MATERIAL_NAME` | Assign material to object | — |
-| `list` | List all materials script | — |
+| `assign OBJECT_NAME MATERIAL_NAME` | Assign material to **one** object | One object per call — repeat for each object |
+| `list` | List all materials in session | — |
 
 ### modifier
 | Command | Description | Key flags |
@@ -87,14 +89,21 @@ ls -lh /tmp/blender_render.png
 ### camera
 | Command | Description | Key flags |
 |---------|-------------|-----------|
-| `set` | Set active camera properties | `--location X Y Z`, `--rotation X Y Z`, `--lens FOCAL_LENGTH` |
+| `add` | Add a camera to the scene | `--location X Y Z`, `--rotation X Y Z`, `--focal-length FLOAT`, `--active` |
+| `set INDEX PROP VALUE` | Set a property on existing camera at INDEX | No options — use positional args |
+| `set-active INDEX` | Make camera at INDEX the active scene camera | — |
+| `list` | List all cameras in session | — |
+
+**Important:** Use `camera add` to create and position a camera. `camera set` only modifies existing cameras and takes `INDEX PROP VALUE` (e.g. `camera set 0 focal_length 50`), **not** `--location` or `--rotation`.
 
 ### light
 | Command | Description | Key flags |
 |---------|-------------|-----------|
-| `add TYPE` | Add a light | `--location X Y Z`, `--energy WATTS`, `--color R G B` |
+| `add TYPE` | Add a light to the scene | `--location X Y Z`, `--color R G B`, `--power FLOAT` (default 1000) |
 
 **Light types:** `SUN`, `POINT`, `SPOT`, `AREA`
+
+**Important:** Use `--power` (not `--energy`) for light intensity.
 
 ### animation
 | Command | Description | Key flags |
@@ -137,8 +146,8 @@ sven-integrations-blender --json -p "$P" material create "GreenMat" --color 0.1 
 sven-integrations-blender --json -p "$P" material assign CUBE RedMat
 sven-integrations-blender --json -p "$P" material assign Sphere GreenMat
 
-# Configure camera
-sven-integrations-blender --json -p "$P" camera set --location 7 -7 5 --rotation 63 0 46 --lens 50
+# Add and position camera (use camera add with --location, --rotation, --focal-length)
+sven-integrations-blender --json -p "$P" camera add --location 7 -7 5 --rotation 1.1 0 0.8 --focal-length 50 --active
 
 # Verify objects before render
 sven-integrations-blender --json -p "$P" object list
@@ -154,8 +163,16 @@ ls -lh /tmp/scene_render.png
 - **`--output` must be absolute** — use `/tmp/render.png` not `render.png`. Relative paths fail silently.
 - **Color values are floats 0.0–1.0** — not 0–255. `--color 1.0 0.0 0.0 1.0` is red; `--color 255 0 0 1.0` is wrong.
 - **`object add` takes the mesh type as ARGUMENT** not an option — `object add CUBE` not `object add --type CUBE`.
-- **`render` requires a `.blend` file OR a script** — without a `.blend` file, the render uses the default empty scene. Use `open /path/to/file.blend` first to render an existing blend file.
+- **`camera set` does NOT take `--location`** — use `camera add --location X Y Z` to add a positioned camera. `camera set INDEX PROP VALUE` only changes properties on existing cameras.
+- **`light add` uses `--power` not `--energy`** — `light add POINT --power 800 --location 5 5 5`.
+- **`material assign` takes exactly two arguments** — one object name, one material name. Call it once per object: `material assign Cylinder CatFur` then `material assign Sphere CatFur` (not `material assign Cylinder Sphere CatFur`).
+- **Object names are auto-assigned** — Blender uses `Cylinder`, `Cylinder.001`, `Sphere`, `Sphere.001`, etc. Run `object list` to see exact names before `material assign`.
 - **Frame range must be set before rendering** — `scene frame-range 1 250` sets the timeline; without it you get the default 1–250.
+- **Cycles denoising** — If a custom Blender Python script fails with "Failed to denoise, build has no OpenImageDenoise support", set `scene.cycles.use_denoising = False`.
+
+## Agent anti-patterns (avoid these)
+
+- **Do not embed markdown or code block delimiters in shell commands** — stray backticks or `"}```,` in shell scripts cause "unexpected EOF while looking for matching" errors. Keep shell commands clean.
 
 ## For agents: full flag reference
 
@@ -164,5 +181,7 @@ ls -lh /tmp/scene_render.png
 - `-s` / `--session NAME` — named session in state directory (use `-p` instead for explicitness)
 - `--location X Y Z` — 3D coordinates as three floats
 - `--color R G B A` — RGBA color as four floats in range 0.0–1.0
+- `--power FLOAT` — light intensity (for `light add`; default 1000). Use `--power` not `--energy`.
+- `--focal-length FLOAT` — camera lens in mm (for `camera add`; default 50)
 
 Base directory: /usr/share/sven/skills/integrations/blender
