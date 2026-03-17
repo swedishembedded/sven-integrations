@@ -164,6 +164,18 @@ def scene_current() -> None:
         emit_error(str(exc))
 
 
+@scene_group.command("duplicate")
+@click.argument("name")
+@click.option("--new-name", required=True, help="Name for the duplicated scene.")
+def scene_duplicate(name: str, new_name: str) -> None:
+    """Duplicate scene NAME to NEW_NAME."""
+    try:
+        scene_mod.duplicate_scene(_backend, name, new_name)
+        emit_result(f"Duplicated {name!r} to {new_name!r}", {"scene": new_name})
+    except (ObsConnectionError, ObsRequestError) as exc:
+        emit_error(str(exc))
+
+
 # ---------------------------------------------------------------------------
 # source group
 
@@ -187,11 +199,25 @@ def source_list(scene: str) -> None:
 @click.argument("scene")
 @click.argument("name")
 @click.argument("kind")
+@click.option("--settings", default=None, help="JSON object for input settings (e.g. {\"url\": \"https://...\"}).")
 @click.pass_context
-def source_add(ctx: click.Context, scene: str, name: str, kind: str) -> None:
+def source_add(
+    ctx: click.Context,
+    scene: str,
+    name: str,
+    kind: str,
+    settings: str | None,
+) -> None:
     """Add a source of KIND named NAME to SCENE."""
+    import json as _json
+    settings_dict = None
+    if settings:
+        try:
+            settings_dict = _json.loads(settings)
+        except _json.JSONDecodeError as exc:
+            emit_error(f"Invalid --settings JSON: {exc}")
     try:
-        item = src_mod.add_source(_backend, scene, name, kind)
+        item = src_mod.add_source(_backend, scene, name, kind, settings_dict)
         emit_result(f"Source {name!r} added to {scene!r}", item)
     except (ObsConnectionError, ObsRequestError) as exc:
         emit_error(str(exc))
@@ -254,6 +280,57 @@ def source_visible(scene: str, name: str, state: str) -> None:
         emit_error(str(exc))
 
 
+@source_group.command("show")
+@click.argument("scene")
+@click.argument("name")
+def source_show(scene: str, name: str) -> None:
+    """Show source NAME in SCENE (alias for visible on)."""
+    ctx = click.get_current_context()
+    ctx.invoke(source_visible, scene=scene, name=name, state="on")
+
+
+@source_group.command("hide")
+@click.argument("scene")
+@click.argument("name")
+def source_hide(scene: str, name: str) -> None:
+    """Hide source NAME in SCENE (alias for visible off)."""
+    ctx = click.get_current_context()
+    ctx.invoke(source_visible, scene=scene, name=name, state="off")
+
+
+@source_group.command("transform")
+@click.argument("scene")
+@click.argument("name")
+@click.option("--x", type=float, default=None, help="X position (pixels).")
+@click.option("--y", type=float, default=None, help="Y position (pixels).")
+@click.option("--width", type=float, default=None, help="Width (pixels).")
+@click.option("--height", type=float, default=None, help="Height (pixels).")
+@click.option("--rotation", type=float, default=0.0, help="Rotation (degrees).")
+def source_transform(
+    scene: str,
+    name: str,
+    x: float | None,
+    y: float | None,
+    width: float | None,
+    height: float | None,
+    rotation: float,
+) -> None:
+    """Set position/size of source NAME in SCENE."""
+    try:
+        # Use defaults if not specified (OBS may use current values)
+        x_val = x if x is not None else 0.0
+        y_val = y if y is not None else 0.0
+        w_val = width if width is not None else 1920.0
+        h_val = height if height is not None else 1080.0
+        scene_mod.set_scene_item_transform(_backend, scene, name, x_val, y_val, w_val, h_val, rotation)
+        emit_result(
+            f"Transform applied to {name!r}",
+            {"source": name, "x": x_val, "y": y_val, "width": w_val, "height": h_val},
+        )
+    except (ObsConnectionError, ObsRequestError) as exc:
+        emit_error(str(exc))
+
+
 # ---------------------------------------------------------------------------
 # record group
 
@@ -263,9 +340,15 @@ def record_group() -> None:
 
 
 @record_group.command("start")
-def record_start() -> None:
-    """Start recording."""
+@click.option("--path", default=None,
+              help="Set recording directory (or parent of file path) before starting.")
+def record_start(path: str | None) -> None:
+    """Start recording. Use --path to set output directory first."""
     try:
+        if path:
+            from pathlib import Path
+            rec_dir = str(Path(path).parent) if Path(path).suffix else path
+            rec_mod.set_recording_path(_backend, rec_dir)
         rec_mod.start_recording(_backend)
         emit_result("Recording started", {"recording": True})
     except (ObsConnectionError, ObsRequestError) as exc:
@@ -623,32 +706,58 @@ def filter_available(category: str | None) -> None:
 
 @obs_cli.group("output")
 def output_group() -> None:
-    """Output configuration commands."""
+    """Output configuration and control commands."""
 
 
-@output_group.command("streaming")
-@click.option("--service", default="custom", help="Streaming service name.")
-@click.option("--server", required=True, help="RTMP server URL.")
-@click.option("--key", required=True, help="Stream key.")
-@click.pass_context
-def output_streaming(ctx: click.Context, service: str, server: str, key: str) -> None:
-    """Configure streaming destination."""
-    session_name = ctx.obj.get("session_name", "default")
-    setup = _load_obs_setup(session_name)
-    result = output_mod.set_streaming(setup, service, server, key)
-    _save_obs_setup(session_name, setup)
-    emit_result("Streaming config saved", result)
+@output_group.group("recording")
+def output_recording_group() -> None:
+    """Recording output control."""
 
 
-@output_group.command("recording")
+@output_recording_group.command("start")
+@click.option("--path", default=None, help="Set output directory (or parent of file path) before starting.")
+def output_recording_start(path: str | None) -> None:
+    """Start recording. Use --path to set output directory first."""
+    try:
+        if path:
+            from pathlib import Path
+            rec_dir = str(Path(path).parent) if Path(path).suffix else path
+            rec_mod.set_recording_path(_backend, rec_dir)
+        rec_mod.start_recording(_backend)
+        emit_result("Recording started", {"recording": True})
+    except (ObsConnectionError, ObsRequestError) as exc:
+        emit_error(str(exc))
+
+
+@output_recording_group.command("stop")
+def output_recording_stop() -> None:
+    """Stop recording."""
+    try:
+        info = rec_mod.stop_recording(_backend)
+        emit_result("Recording stopped", info)
+    except (ObsConnectionError, ObsRequestError) as exc:
+        emit_error(str(exc))
+
+
+@output_recording_group.command("status")
+def output_recording_status() -> None:
+    """Show recording status."""
+    try:
+        info = rec_mod.get_recording_status(_backend)
+        emit_result("Recording status", info)
+    except (ObsConnectionError, ObsRequestError) as exc:
+        emit_error(str(exc))
+
+
+@output_recording_group.command("config")
 @click.option("--path", required=True, help="Output directory path.")
 @click.option("--format", "fmt", default="mkv",
               type=click.Choice(["mkv", "mp4", "flv", "mov"]), help="Container format.")
 @click.option("--quality", default="high",
               type=click.Choice(["high", "medium", "low", "lossless"]), help="Quality preset.")
 @click.pass_context
-def output_recording(ctx: click.Context, path: str, fmt: str, quality: str) -> None:
-    """Configure recording output."""
+def output_recording_config(ctx: click.Context, path: str, fmt: str, quality: str) -> None:
+    """Configure recording output (project-level)."""
     session_name = ctx.obj.get("session_name", "default")
     setup = _load_obs_setup(session_name)
     try:
@@ -657,6 +766,55 @@ def output_recording(ctx: click.Context, path: str, fmt: str, quality: str) -> N
         emit_error(str(exc))
     _save_obs_setup(session_name, setup)
     emit_result("Recording config saved", result)
+
+
+@output_group.group("streaming")
+def output_streaming_group() -> None:
+    """Streaming output control."""
+
+
+@output_streaming_group.command("start")
+def output_streaming_start() -> None:
+    """Start streaming."""
+    try:
+        rec_mod.start_streaming(_backend)
+        emit_result("Streaming started", {"streaming": True})
+    except (ObsConnectionError, ObsRequestError) as exc:
+        emit_error(str(exc))
+
+
+@output_streaming_group.command("stop")
+def output_streaming_stop() -> None:
+    """Stop streaming."""
+    try:
+        info = rec_mod.stop_streaming(_backend)
+        emit_result("Streaming stopped", info)
+    except (ObsConnectionError, ObsRequestError) as exc:
+        emit_error(str(exc))
+
+
+@output_streaming_group.command("status")
+def output_streaming_status() -> None:
+    """Show streaming status."""
+    try:
+        info = rec_mod.get_streaming_status(_backend)
+        emit_result("Streaming status", info)
+    except (ObsConnectionError, ObsRequestError) as exc:
+        emit_error(str(exc))
+
+
+@output_streaming_group.command("config")
+@click.option("--service", default="custom", help="Streaming service name.")
+@click.option("--server", required=True, help="RTMP server URL.")
+@click.option("--key", required=True, help="Stream key.")
+@click.pass_context
+def output_streaming_config(ctx: click.Context, service: str, server: str, key: str) -> None:
+    """Configure streaming destination (project-level)."""
+    session_name = ctx.obj.get("session_name", "default")
+    setup = _load_obs_setup(session_name)
+    result = output_mod.set_streaming(setup, service, server, key)
+    _save_obs_setup(session_name, setup)
+    emit_result("Streaming config saved", result)
 
 
 @output_group.command("settings")
