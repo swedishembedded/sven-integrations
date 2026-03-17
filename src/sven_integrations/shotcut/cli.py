@@ -7,11 +7,23 @@ import click
 from ..shared import cli_main, emit_error, emit_json, emit_result
 from .backend import ShotcutBackend, ShotcutError
 from .core import compositing as comp_mod
+from .core import export as export_mod
 from .core import media as media_mod
 from .core import timeline as tl_mod
 from .core import transitions as trans_mod
 from .project import MltClip, MltTrack, ShotcutProject, new_clip_id, new_track_id
 from .session import ShotcutSession
+
+_PROFILE_PRESETS: dict[str, tuple[int, int, float]] = {
+    "atsc_1080p_30": (1920, 1080, 29.97),
+    "atsc_1080p_25": (1920, 1080, 25.0),
+    "atsc_1080p_24": (1920, 1080, 24.0),
+    "atsc_720p_30": (1280, 720, 29.97),
+    "atsc_720p_25": (1280, 720, 25.0),
+    "uhd_2160p_30": (3840, 2160, 30.0),
+    "dv_pal": (720, 576, 25.0),
+    "dv_ntsc": (720, 480, 29.97),
+}
 
 # ---------------------------------------------------------------------------
 # Shared helpers
@@ -58,6 +70,53 @@ def shotcut_cli(ctx: click.Context, session: str, project_path: str | None, use_
 
 
 # ---------------------------------------------------------------------------
+# project group
+
+
+@shotcut_cli.group("project")
+def project_grp() -> None:
+    """Project management commands."""
+
+
+@project_grp.command("new")
+@click.option("--profile", default="atsc_1080p_25", help="MLT profile name.")
+@click.option("--output", "-o", "output_path", default=None, help="Write project JSON to file.")
+@click.pass_context
+def project_new(ctx: click.Context, profile: str, output_path: str | None) -> None:
+    """Create a new empty project."""
+    from pathlib import Path
+    import json as _json
+    sess = _get_session(ctx.obj["session"])
+    proj = ShotcutProject(profile_name=profile)
+    if profile in _PROFILE_PRESETS:
+        w, h, fps = _PROFILE_PRESETS[profile]
+        proj.width = w
+        proj.height = h
+        proj.fps = fps
+    _save_project(sess, proj)
+    if output_path:
+        Path(output_path).parent.mkdir(parents=True, exist_ok=True)
+        Path(output_path).write_text(_json.dumps(proj.to_dict(), indent=2), encoding="utf-8")
+    emit_result(f"Project created with profile {profile!r}", {"profile": profile, "tracks": 0})
+
+
+@project_grp.command("save")
+@click.option("--output", "-o", "mlt_path", required=True, help="Output MLT file path.")
+@click.pass_context
+def project_save(ctx: click.Context, mlt_path: str) -> None:
+    """Save project to MLT file."""
+    from pathlib import Path
+    sess = _get_session(ctx.obj["session"])
+    proj = _load_project(sess)
+    Path(mlt_path).parent.mkdir(parents=True, exist_ok=True)
+    tree = tl_mod.project_to_mlt(proj)
+    tl_mod.write_mlt(tree, mlt_path)
+    proj.mlt_path = mlt_path
+    _save_project(sess, proj)
+    emit_result(f"Saved to {mlt_path}", {"status": "ok", "path": mlt_path})
+
+
+# ---------------------------------------------------------------------------
 # open
 
 
@@ -84,20 +143,59 @@ def cmd_open(ctx: click.Context, mlt_path: str) -> None:
 
 @shotcut_cli.command("render")
 @click.option("--output", "-o", required=True, help="Output file path.")
-@click.option("--preset", "-p", default="youtube", help="Export preset name.")
+@click.option("--preset", default="youtube", help="Export preset name.")
 @click.pass_context
 def cmd_render(ctx: click.Context, output: str, preset: str) -> None:
-    """Render the active MLT project."""
+    """Render the project. Saves to temp MLT if project not yet saved."""
+    import os
+    import tempfile
     sess = _get_session(ctx.obj["session"])
     proj = _load_project(sess)
-    if not proj.mlt_path:
-        emit_error("No MLT file loaded; use 'open' first.")
+    mlt_path = proj.mlt_path
+    temp_mlt = None
+    if not mlt_path:
+        fd, temp_mlt = tempfile.mkstemp(suffix=".mlt")
+        os.close(fd)
+        tree = tl_mod.project_to_mlt(proj)
+        tl_mod.write_mlt(tree, temp_mlt)
+        mlt_path = temp_mlt
     backend = ShotcutBackend()
     try:
-        backend.render_mlt(proj.mlt_path, output, profile=proj.profile_name)  # type: ignore[arg-type]
+        backend.render_mlt(mlt_path, output, profile=proj.profile_name)  # type: ignore[arg-type]
+        emit_result(f"Rendered to {output}", {"status": "ok", "output": output})
     except ShotcutError as exc:
         emit_error(str(exc))
-    emit_result(f"Rendered to {output}", {"status": "ok", "output": output})
+    finally:
+        if temp_mlt:
+            try:
+                os.unlink(temp_mlt)
+            except OSError:
+                pass
+
+
+# ---------------------------------------------------------------------------
+# export group
+
+
+@shotcut_cli.group("export")
+def export_grp() -> None:
+    """Export commands."""
+
+
+@export_grp.command("render")
+@click.option("--output", "-o", required=True, help="Output file path.")
+@click.option("--preset", "-p", default="youtube", help="Export preset name.")
+@click.pass_context
+def export_render(ctx: click.Context, output: str, preset: str) -> None:
+    """Render project to file (alias for top-level render)."""
+    ctx.invoke(cmd_render, output=output, preset=preset)
+
+
+@export_grp.command("presets")
+def export_presets() -> None:
+    """List available export presets."""
+    presets = export_mod.list_melt_presets()
+    emit_result(f"{len(presets)} preset(s)", presets)
 
 
 # ---------------------------------------------------------------------------
@@ -432,6 +530,13 @@ def composite_pip(
 @shotcut_cli.group("media")
 def media_grp() -> None:
     """Media probing and resource checking commands."""
+
+
+@media_grp.command("import")
+@click.argument("path")
+def media_import(path: str) -> None:
+    """Register a media file. Returns path for use in clip add."""
+    emit_result(f"Registered: {path}", {"path": path, "resource": path})
 
 
 @media_grp.command("probe")

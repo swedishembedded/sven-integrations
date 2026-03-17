@@ -106,7 +106,10 @@ def write_mlt(tree: ET.ElementTree, path: str) -> None:
 
 
 def project_to_mlt(project: ShotcutProject) -> ET.ElementTree:
-    """Convert a ShotcutProject to an MLT ElementTree."""
+    """Convert a ShotcutProject to an MLT ElementTree.
+
+    Creates producer elements for each unique resource so melt can resolve references.
+    """
     root = ET.Element(
         "mlt",
         attrib={
@@ -115,6 +118,22 @@ def project_to_mlt(project: ShotcutProject) -> ET.ElementTree:
             "title": project.mlt_path or "untitled",
         },
     )
+
+    # Collect unique resources and create producers (required for melt)
+    resources: set[str] = set()
+    for track in project.tracks:
+        for clip in track.clips:
+            resources.add(clip.resource)
+
+    for resource in resources:
+        prod = ET.SubElement(root, "producer", attrib={"id": resource})
+        ET.SubElement(prod, "property", attrib={"name": "resource"}).text = resource
+        # For color/generated sources, set mlt_service
+        if resource.startswith("color:"):
+            prod.set("mlt_service", "color")
+        elif resource.startswith("count:"):
+            prod.set("mlt_service", "count")
+
     # Profile
     ET.SubElement(
         root,

@@ -5,7 +5,7 @@ description: |
   apply filters, add compositing effects, or render video. Prefer Shotcut over
   Kdenlive on non-KDE/non-Linux systems. Trigger phrases: "edit video with Shotcut",
   "Shotcut timeline", "MLT video", "video filter", "video compositing", "render video".
-version: 2.0.0
+version: 2.1.0
 sven:
   requires_bins: [sven-integrations-shotcut]
 ---
@@ -24,19 +24,18 @@ P=/tmp/shotcut_project.json
 # 1. Create a new project
 sven-integrations-shotcut --json -p "$P" project new --profile atsc_1080p_30
 
-# 2. Import media
-sven-integrations-shotcut --json -p "$P" media import /path/to/video.mp4
+# 2. Add a track (get track_id from output)
+sven-integrations-shotcut --json -p "$P" track add "V1"
 
-# 3. Add a timeline track
-sven-integrations-shotcut --json -p "$P" timeline add-track --type video --name "V1"
+# 3. Add a clip (clip add TRACK_ID RESOURCE --out N --pos N)
+sven-integrations-shotcut --json -p "$P" clip add <TRACK_ID> /path/to/video.mp4 --out 90 --pos 0
 
-# 4. Add the clip to the track (use clip ID from media import output)
-sven-integrations-shotcut --json -p "$P" timeline add-clip --track-id <TRACK_ID> --clip-path /path/to/video.mp4 --start 0
+# 4. Optional: save MLT file
+sven-integrations-shotcut --json -p "$P" project save -o /tmp/project.mlt
 
 # 5. Render (requires melt: apt install melt)
-sven-integrations-shotcut --json -p "$P" export render --output /tmp/output.mp4
+sven-integrations-shotcut --json -p "$P" export render -o /tmp/output.mp4
 
-# 6. Verify
 ls -lh /tmp/output.mp4
 ```
 
@@ -44,11 +43,11 @@ ls -lh /tmp/output.mp4
 
 1. **Always run `project new` first** with a `--profile` to set resolution/FPS.
 2. **Always pass `-p /path/to/project.json`** to persist state.
-3. **`media import` registers a file** and returns a clip ID used in timeline operations.
-4. **Track IDs come from `timeline add-track` output** — capture the JSON `track_id` field.
+3. **`clip add` returns clip_id** — use it for filter/transition operations.
+4. **Track IDs come from `track add` output** — capture the JSON `track_id` field.
 5. **`export render` requires `melt`** — install with `apt-get install melt` or `brew install mlt`.
-6. **Blend modes apply to compositing** — use `composite set-blend` for video layer blending.
-7. **Time is in frames** — multiply seconds × FPS to get frame numbers.
+6. **Time is in frames** — multiply seconds × FPS to get frame numbers (e.g. 3s @ 30fps = 90 frames).
+7. **`media import PATH`** — optional; returns path for use in clip add. You can use the path directly in `clip add`.
 
 ## Command groups
 
@@ -56,82 +55,73 @@ ls -lh /tmp/output.mp4
 | Command | Description | Key flags |
 |---------|-------------|-----------|
 | `new` | Create a new project | `--profile PROFILE`, `-o PATH` |
-| `open PATH` | Load an existing MLT file | — |
-| `save` | Save project to MLT file | `--output PATH` |
-| `info` | Show project metadata | — |
-| `list-profiles` | List available render profiles | — |
+| `save` | Save project to MLT file | `-o PATH` (required) |
 
 ### media
 | Command | Description | Key flags |
 |---------|-------------|-----------|
-| `import PATH` | Register a media file (returns clip ID) | — |
-| `info PATH` | Get media file metadata | — |
+| `import PATH` | Register media (returns path for clip add) | — |
+| `probe PATH` | Get media metadata | — |
+| `list` | List resources in project | — |
+| `check` | Verify media files exist | — |
+| `thumbnail PATH` | Extract thumbnail | `-o PATH`, `--time SEC` |
 
-### timeline
-| Command | Description | Key flags |
-|---------|-------------|-----------|
-| `add-track` | Add a track to the timeline | `--type video\|audio`, `--name NAME` |
-| `remove-track` | Remove a track | `--track-id ID` |
-| `add-clip` | Place a clip on a track | `--track-id ID`, `--clip-path PATH`, `--start FRAME`, `--end FRAME` |
-| `remove-clip` | Remove a clip | `--clip-id ID` |
-| `move-clip` | Move a clip in time | `--clip-id ID`, `--start FRAME` |
-| `trim-clip` | Adjust clip in/out points | `--clip-id ID`, `--in FRAME`, `--out FRAME` |
-| `list` | List tracks and clips | — |
+### track
+| Command | Description | Args/Flags |
+|---------|-------------|-------------|
+| `add NAME` | Add a track | `--hide 0\|1\|2` |
+| `remove TRACK_ID` | Remove a track | — |
+| `list` | List all tracks | — |
+| `mute TRACK_ID` | Mute track | `--audio` for audio only |
+
+### clip
+| Command | Description | Args/Flags |
+|---------|-------------|-------------|
+| `add TRACK_ID RESOURCE` | Add clip to track | `--in N`, `--out N` (required), `--pos N` |
+| `remove CLIP_ID` | Remove a clip | — |
+| `trim CLIP_ID` | Trim in/out points | `--in N`, `--out N` |
+| `move CLIP_ID POSITION` | Move clip (frames) | — |
 
 ### filter
-| Command | Description | Key flags |
-|---------|-------------|-----------|
-| `add` | Add a filter to a clip | `--clip-id ID`, `--filter FILTER_NAME`, `--param key=value` (repeatable) |
-| `remove` | Remove a filter | `--clip-id ID`, `--filter FILTER_NAME` |
-| `set` | Update filter parameter | `--clip-id ID`, `--filter FILTER_NAME`, `--param key=value` |
-| `list` | List filters on a clip | `--clip-id ID` |
-| `list-available` | List available MLT filters | — |
+| Command | Description | Args/Flags |
+|---------|-------------|-------------|
+| `add CLIP_ID FILTER_NAME` | Add filter to clip | `-p key=value` (repeatable) |
+| `remove CLIP_ID FILTER_NAME` | Remove filter | — |
+| `list CLIP_ID` | List filters on clip | — |
 
-**Common filters:**
-```
-brightness      value=0.0 (−1.0 to 1.0)
-contrast        value=1.0 (multiplier)
-saturation      value=1.0 (0=grayscale, 2=vivid)
-blur            value=5 (pixel radius)
-volume          gain=0.0 (dB, e.g. gain=6 = +6dB)
-```
+**Common filters:** brightness, contrast, blur, fade_in, fade_out
 
 ### transition
-| Command | Description | Key flags |
-|---------|-------------|-----------|
-| `add` | Add a transition between two overlapping clips | `--clip1-id ID`, `--clip2-id ID`, `--type TRANSITION`, `--param key=value` |
-| `remove` | Remove a transition | `--transition-id ID` |
-| `set` | Update transition parameter | `--transition-id ID`, `--param key=value` |
-| `list` | List all transitions | — |
-| `list-available` | List available transition types | — |
-
-**Available transitions:** `luma`, `mix`, `composite`, `qtblend`, `movit.luma_mix`
+| Command | Description | Args/Flags |
+|---------|-------------|-------------|
+| `add NAME` | Add transition between tracks | `--track-a N`, `--track-b N`, `--in N`, `--out N`, `-p key=value` |
+| `remove INDEX` | Remove transition | — |
+| `set INDEX PARAM VALUE` | Set transition param | — |
+| `list` | List transitions | — |
+| `available` | List available types | `--category dissolve\|wipe` |
 
 ### composite
-| Command | Description | Key flags |
-|---------|-------------|-----------|
-| `set-blend` | Set track blend mode | `--track-index N`, `--mode MODE` |
-| `get-blend` | Get blend mode of a track | `--track-index N` |
-| `set-opacity` | Set track opacity | `--track-index N`, `--opacity 0.0–1.0` |
-| `pip` | Picture-in-picture setup | `--track-index N`, `--rect "x,y,w,h"` |
-
-**Blend modes:** `normal`, `add`, `multiply`, `screen`, `overlay`, `darken`, `lighten`, `difference`, `exclusion`, `hue`, `saturation`, `color`, `luminosity`
+| Command | Description | Args/Flags |
+|---------|-------------|-------------|
+| `set-blend TRACK_INDEX MODE` | Set track blend mode | — |
+| `get-blend TRACK_INDEX` | Get blend mode | — |
+| `set-opacity TRACK_INDEX VALUE` | Set opacity (0–1) | — |
+| `pip TRACK_INDEX CLIP_INDEX` | Picture-in-picture | `--x`, `--y`, `--width`, `--height` |
+| `blend-modes` | List blend modes | — |
 
 ### export
 | Command | Description | Key flags |
 |---------|-------------|-----------|
+| `render` | Render via melt | `-o PATH` (required), `-p preset` |
 | `presets` | List export presets | — |
-| `render` | Render project via melt | `--output PATH` (required), `--preset PRESET` |
 
-**Export presets:** `youtube` (H.264/AAC), `vimeo`, `hevc`, `mp3_audio`, `wav_audio`
+**Presets:** youtube, vimeo, dnxhd, prores, gif, mp3
 
 ### session
 | Command | Description |
 |---------|-------------|
-| `undo` | Undo last operation |
-| `redo` | Redo last undone operation |
-| `history` | Show operation history |
-| `list` | List all sessions |
+| `show` | Show session data |
+| `list` | List sessions |
 | `delete` | Delete current session |
 
 ## Available profiles
@@ -147,7 +137,7 @@ dv_pal           720×576 @ 25fps
 dv_ntsc          720×480 @ 29.97fps
 ```
 
-## Complete recipe: two-clip video with title overlay
+## Complete recipe: two-clip video with filter
 
 ```bash
 P=/tmp/shotcut_edit.json
@@ -155,40 +145,34 @@ P=/tmp/shotcut_edit.json
 # Create project at 1080p30
 sven-integrations-shotcut --json -p "$P" project new --profile atsc_1080p_30
 
-# Import clips
-sven-integrations-shotcut --json -p "$P" media import /path/to/clip1.mp4
-sven-integrations-shotcut --json -p "$P" media import /path/to/clip2.mp4
-
-# Add video track
-sven-integrations-shotcut --json -p "$P" timeline add-track --type video --name "Main"
+# Add track
+sven-integrations-shotcut --json -p "$P" track add "Main"
 # Capture track_id from output
 
-# Add clips (30fps: 90 frames = 3s)
-sven-integrations-shotcut --json -p "$P" timeline add-clip --track-id <TRACK_ID> --clip-path /path/to/clip1.mp4 --start 0 --end 90
-sven-integrations-shotcut --json -p "$P" timeline add-clip --track-id <TRACK_ID> --clip-path /path/to/clip2.mp4 --start 90 --end 180
+# Add clips (30fps: 90 frames = 3s each)
+sven-integrations-shotcut --json -p "$P" clip add <TRACK_ID> /path/to/clip1.mp4 --out 90 --pos 0
+# Capture clip_id from output
+sven-integrations-shotcut --json -p "$P" clip add <TRACK_ID> /path/to/clip2.mp4 --out 90 --pos 90
 
-# Brightness boost on clip 2
-sven-integrations-shotcut --json -p "$P" filter add --clip-id <CLIP2_ID> --filter brightness --param value=0.15
+# Add brightness filter to second clip
+sven-integrations-shotcut --json -p "$P" filter add <CLIP2_ID> brightness -p value=0.15
 
-# Add fade-in transition at the join
-sven-integrations-shotcut --json -p "$P" transition add --clip1-id <CLIP1_ID> --clip2-id <CLIP2_ID> --type luma
-
-# Verify
-sven-integrations-shotcut --json -p "$P" timeline list
+# Add transition between tracks (need two tracks)
+sven-integrations-shotcut --json -p "$P" track add "V2"
+sven-integrations-shotcut --json -p "$P" transition add luma --track-a 0 --track-b 1 --in 85 --out 95
 
 # Render
-sven-integrations-shotcut --json -p "$P" export render --output /tmp/final_video.mp4
+sven-integrations-shotcut --json -p "$P" export render -o /tmp/final_video.mp4
 ls -lh /tmp/final_video.mp4
 ```
 
 ## Common pitfalls
 
-- **`media import` vs `timeline add-clip`** — you must `media import` first (to get a clip ID), then use `timeline add-clip --clip-path` (for the actual file path). The clip ID from import is used for filter/transition operations.
-- **`melt` required for rendering** — install with `apt-get install melt` (Ubuntu) or `brew install mlt` (macOS). Check with `which melt`.
-- **`export render --output` must be absolute** — use `/tmp/output.mp4` not `output.mp4`.
-- **Frames not seconds** — `--start 90` is frame 90. At 30fps: 90/30 = 3 seconds.
-- **Track IDs are strings** — capture them from JSON output; they look like `track-001`.
-- **Blend mode changes affect compositing** — only relevant when you have overlapping tracks (picture-in-picture, title overlays). For simple cuts, ignore `composite`.
+- **`melt` required** — install with `apt-get install melt` (Ubuntu) or `brew install mlt` (macOS).
+- **`export render -o` must be absolute** — use `/tmp/output.mp4` not `output.mp4`.
+- **Frames not seconds** — `--out 90` is 90 frames. At 30fps: 90/30 = 3 seconds.
+- **Track IDs are strings** — e.g. `track_abc123`. Capture from `track add` or `track list`.
+- **clip add --out required** — always specify `--out` (end frame) for the clip.
 
 ## For agents: full flag reference
 
