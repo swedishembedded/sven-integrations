@@ -39,6 +39,28 @@ def _save_project(session: MermaidSession, project: MermaidProject) -> None:
     session.save()
 
 
+def _render_diagram(diag: MermaidDiagram, output: str, fmt: str = "png") -> None:
+    """Render a diagram to file using mmdc or API."""
+    src = diag.render_src()
+    be = MermaidBackend()
+    try:
+        if be.is_mmdc_available():
+            result = be.render_with_mmdc(src, output, fmt=fmt, theme=diag.theme)
+            emit_result(
+                f"Rendered to {result}",
+                {"status": "rendered", "output": str(result), "renderer": "mmdc"},
+            )
+        else:
+            data = be.render_with_api(src, fmt=fmt, theme=diag.theme)
+            Path(output).write_bytes(data)
+            emit_result(
+                f"Rendered to {output} via API",
+                {"status": "rendered", "output": output, "renderer": "api"},
+            )
+    except MermaidError as exc:
+        emit_error(str(exc))
+
+
 # ---------------------------------------------------------------------------
 # CLI group
 # ---------------------------------------------------------------------------
@@ -238,6 +260,46 @@ def diagram_show(ctx: click.Context, title: str) -> None:
         emit(src)
 
 
+@diagram_group.command("render")
+@click.option("--title", required=True, help="Diagram title to render.")
+@click.option("--output", "-o", required=True, help="Output file path.")
+@click.option("--format", "fmt", default="png", type=click.Choice(["png", "svg", "pdf"]))
+@click.option("--theme", default=None, help="Override theme (default: diagram theme).")
+@click.pass_context
+def diagram_render(
+    ctx: click.Context,
+    title: str,
+    output: str,
+    fmt: str,
+    theme: str | None,
+) -> None:
+    """Render a named diagram to an image file."""
+    session = _get_session(ctx)
+    project = _load_project(session)
+    diag = project.find_diagram(title)
+    if diag is None:
+        emit_error(f"Diagram not found: {title!r}")
+    src = diag.render_src()
+    theme_val = theme or diag.theme
+    be = MermaidBackend()
+    try:
+        if be.is_mmdc_available():
+            result = be.render_with_mmdc(src, output, fmt=fmt, theme=theme_val)
+            emit_result(
+                f"Rendered to {result}",
+                {"status": "rendered", "output": str(result), "renderer": "mmdc"},
+            )
+        else:
+            data = be.render_with_api(src, fmt=fmt, theme=theme_val)
+            Path(output).write_bytes(data)
+            emit_result(
+                f"Rendered to {output} via API",
+                {"status": "rendered", "output": output, "renderer": "api"},
+            )
+    except MermaidError as exc:
+        emit_error(str(exc))
+
+
 # ---------------------------------------------------------------------------
 # flowchart
 # ---------------------------------------------------------------------------
@@ -247,18 +309,34 @@ def diagram_show(ctx: click.Context, title: str) -> None:
 @click.option("--nodes", default="[]", help="JSON array of node dicts.")
 @click.option("--edges", default="[]", help="JSON array of edge dicts.")
 @click.option("--direction", default="TB", type=click.Choice(["TB", "LR", "BT", "RL"]))
+@click.option("--output", "-o", default=None, help="Render directly to file (skips adding to project).")
+@click.option("--format", "fmt", default="png", type=click.Choice(["png", "svg", "pdf"]))
+@click.option("--theme", default="default")
 @click.pass_context
-def cmd_flowchart(ctx: click.Context, nodes: str, edges: str, direction: str) -> None:
-    """Generate a flowchart definition and store it."""
+def cmd_flowchart(
+    ctx: click.Context,
+    nodes: str,
+    edges: str,
+    direction: str,
+    output: str | None,
+    fmt: str,
+    theme: str,
+) -> None:
+    """Generate a flowchart definition. Use --output to render directly."""
     try:
         node_list = json.loads(nodes)
         edge_list = json.loads(edges)
     except json.JSONDecodeError as exc:
         emit_error(f"Invalid JSON: {exc}")
     src = build_flowchart(node_list, edge_list, direction)
+    if output:
+        diag = MermaidDiagram(diagram_type="flowchart", definition=src, theme=theme)
+        _render_diagram(diag, output, fmt)
+        return
     session = _get_session(ctx)
     project = _load_project(session)
-    diag = MermaidDiagram(diagram_type="flowchart", definition=src)
+    n = sum(1 for d in project.diagrams if d.diagram_type == "flowchart")
+    diag = MermaidDiagram(diagram_type="flowchart", definition=src, title=f"flowchart_{n}")
     project.add_diagram(diag)
     _save_project(session, project)
     emit_result(src, {"status": "created", "definition": src})
@@ -270,20 +348,35 @@ def cmd_flowchart(ctx: click.Context, nodes: str, edges: str, direction: str) ->
 
 
 @mermaid_cli.command("sequence")
-@click.option("--participants", default="[]", help="JSON array of participant names.")
+@click.option("--participants", "--actors", default="[]", help="JSON array of participant names.")
 @click.option("--messages", default="[]", help="JSON array of message dicts.")
+@click.option("--output", "-o", default=None, help="Render directly to file (skips adding to project).")
+@click.option("--format", "fmt", default="png", type=click.Choice(["png", "svg", "pdf"]))
+@click.option("--theme", default="default")
 @click.pass_context
-def cmd_sequence(ctx: click.Context, participants: str, messages: str) -> None:
-    """Generate a sequence diagram and store it."""
+def cmd_sequence(
+    ctx: click.Context,
+    participants: str,
+    messages: str,
+    output: str | None,
+    fmt: str,
+    theme: str,
+) -> None:
+    """Generate a sequence diagram. Use --output to render directly."""
     try:
         parts = json.loads(participants)
         msgs = json.loads(messages)
     except json.JSONDecodeError as exc:
         emit_error(f"Invalid JSON: {exc}")
     src = build_sequence(parts, msgs)
+    if output:
+        diag = MermaidDiagram(diagram_type="sequenceDiagram", definition=src, theme=theme)
+        _render_diagram(diag, output, fmt)
+        return
     session = _get_session(ctx)
     project = _load_project(session)
-    diag = MermaidDiagram(diagram_type="sequenceDiagram", definition=src)
+    n = sum(1 for d in project.diagrams if d.diagram_type == "sequenceDiagram")
+    diag = MermaidDiagram(diagram_type="sequenceDiagram", definition=src, title=f"sequence_{n}")
     project.add_diagram(diag)
     _save_project(session, project)
     emit_result(src, {"status": "created", "definition": src})
@@ -295,16 +388,36 @@ def cmd_sequence(ctx: click.Context, participants: str, messages: str) -> None:
 
 
 @mermaid_cli.command("gantt")
-@click.option("--title", required=True)
-@click.option("--sections", default="[]", help="JSON array of section dicts.")
+@click.option("--title", default="Gantt", help="Chart title (also used as default section name).")
+@click.option("--sections", default="[]", help="JSON array of {title, tasks} section dicts.")
+@click.option("--tasks", default=None, help="JSON array of flat task dicts (wrapped in default section).")
+@click.option("--output", "-o", default=None, help="Render directly to file (skips adding to project).")
+@click.option("--format", "fmt", default="png", type=click.Choice(["png", "svg", "pdf"]))
+@click.option("--theme", default="default")
 @click.pass_context
-def cmd_gantt(ctx: click.Context, title: str, sections: str) -> None:
-    """Generate a Gantt chart and store it."""
+def cmd_gantt(
+    ctx: click.Context,
+    title: str,
+    sections: str,
+    tasks: str | None,
+    output: str | None,
+    fmt: str,
+    theme: str,
+) -> None:
+    """Generate a Gantt chart. Use --tasks for flat list or --sections for structured. Use --output to render."""
     try:
-        section_list = json.loads(sections)
+        if tasks is not None:
+            task_list = json.loads(tasks)
+            section_list = [{"title": title, "tasks": task_list}]
+        else:
+            section_list = json.loads(sections)
     except json.JSONDecodeError as exc:
         emit_error(f"Invalid JSON: {exc}")
     src = build_gantt(title, section_list)
+    if output:
+        diag = MermaidDiagram(diagram_type="gantt", title=title, definition=src, theme=theme)
+        _render_diagram(diag, output, fmt)
+        return
     session = _get_session(ctx)
     project = _load_project(session)
     diag = MermaidDiagram(diagram_type="gantt", title=title, definition=src)

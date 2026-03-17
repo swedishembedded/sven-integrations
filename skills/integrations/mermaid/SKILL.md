@@ -6,7 +6,7 @@ description: |
   Prefer Mermaid when the diagram is simple and can be described in text.
   Trigger phrases: "create flowchart", "sequence diagram", "class diagram",
   "Gantt chart", "Mermaid diagram", "generate diagram from text".
-version: 2.0.0
+version: 2.1.0
 sven:
   requires_bins: [sven-integrations-mermaid]
 ---
@@ -51,9 +51,7 @@ sequenceDiagram
     API-->>User: JWT token
 EOF
 
-sven-integrations-mermaid --json render \
-  --file /tmp/diagram.mmd \
-  --output /tmp/sequence.png
+sven-integrations-mermaid --json render --file /tmp/diagram.mmd -o /tmp/sequence.png
 ```
 
 ## Key rules for agents
@@ -166,28 +164,30 @@ pie title Browser Usage
 | `--format FORMAT` | Output format | `png`, `svg`, `pdf` |
 | `--theme THEME` | Visual theme | `default`, `dark`, `neutral`, `forest` |
 
-### diagram (project subcommands)
+### diagram
 | Command | Description | Key flags |
 |---------|-------------|-----------|
-| `add` | Add named diagram to project | `--title TITLE`, `--type TYPE`, `--definition "..."` |
+| `add` | Add named diagram to project | `--title TITLE`, `--type TYPE` |
 | `list` | List diagrams in project | — |
-| `show TITLE` | Show diagram source | — |
-| `remove TITLE` | Remove diagram | — |
-| `render TITLE` | Render a named diagram | `--output PATH`, `--format FORMAT`, `--theme THEME` |
+| `show` | Show diagram source | `--title TITLE` |
+| `remove` | Remove diagram | `--title TITLE` |
+| `render` | Render a named diagram to file | `--title TITLE`, `-o PATH`, `--format png\|svg\|pdf` |
 
-### flowchart / sequence / gantt (shortcuts)
-Pre-built builders for common diagram types:
+### flowchart / sequence / gantt (shortcuts with --output)
+Pre-built builders; use `--output` to render directly:
 ```bash
-sven-integrations-mermaid --json flowchart --nodes '[{"id":"A","label":"Start"},{"id":"B","label":"End"}]' --edges '[{"from":"A","to":"B","label":"go"}]' --output /tmp/fc.png
-sven-integrations-mermaid --json sequence --actors '["User","API","DB"]' --messages '[{"from":"User","to":"API","text":"login","type":"solid"}]' --output /tmp/seq.png
-sven-integrations-mermaid --json gantt --tasks '[{"name":"Task A","start":"2025-01-01","end":"2025-01-15","status":"done"}]' --output /tmp/gantt.png
+sven-integrations-mermaid --json flowchart --nodes '[{"id":"A","label":"Start"},{"id":"B","label":"End"}]' --edges '[{"from":"A","to":"B","label":"go"}]' -o /tmp/fc.png
+sven-integrations-mermaid --json sequence --participants '["User","API","DB"]' --messages '[{"from":"User","to":"API","text":"login"}]' -o /tmp/seq.png
+sven-integrations-mermaid --json gantt --title "Project" --tasks '[{"name":"Task A","start":"2025-01-01","end":"2025-01-15","status":"done"}]' -o /tmp/gantt.png
 ```
+- **flowchart**: `--nodes`, `--edges`, `--direction TB|LR|BT|RL`, `-o PATH`
+- **sequence**: `--participants` or `--actors`, `--messages`, `-o PATH`
+- **gantt**: `--title`, `--tasks` (flat list) or `--sections` (structured), `-o PATH`
 
 ### session
 | Command | Description |
 |---------|-------------|
-| `undo` | Undo last operation |
-| `history` | Show operation history |
+| `show` | Show active session |
 | `list` | List all sessions |
 | `delete` | Delete current session |
 
