@@ -11,7 +11,7 @@ from typing import Any
 
 import click
 
-from ..shared import OutputFormatter, emit, emit_error, emit_result
+from ..shared import OutputFormatter, cli_main, emit, emit_error, emit_result
 from ..shared.output import set_json_mode
 from .core import document as doc_ops
 from .core import elements as elem_ops
@@ -1224,4 +1224,4 @@ def cmd_repl(ctx: click.Context) -> None:
 
 
 def main() -> None:
-    inkscape_cli()
+    cli_main(inkscape_cli)

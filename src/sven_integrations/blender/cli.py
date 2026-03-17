@@ -11,7 +11,7 @@ import json as _json
 
 import click
 
-from ..shared import OutputFormatter, emit, emit_error, emit_result
+from ..shared import OutputFormatter, cli_main, emit, emit_error, emit_result
 from ..shared.output import set_json_mode
 from .core import animation as anim_ops
 from .core import lighting as light_ops
@@ -854,4 +854,4 @@ def animation_current_frame(ctx: click.Context, frame: int) -> None:
 
 
 def main() -> None:
-    blender_cli()
+    cli_main(blender_cli)

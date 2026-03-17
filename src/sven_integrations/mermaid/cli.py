@@ -7,7 +7,7 @@ from pathlib import Path
 
 import click
 
-from ..shared import emit, emit_error, emit_json, emit_result
+from ..shared import cli_main, emit, emit_error, emit_json, emit_result
 from .backend import MermaidBackend, MermaidError
 from .core.diagrams import (
     build_flowchart,
@@ -366,7 +366,7 @@ def cmd_repl(ctx: click.Context) -> None:
 
 
 def main() -> None:
-    mermaid_cli()
+    cli_main(mermaid_cli)
 
 
 if __name__ == "__main__":

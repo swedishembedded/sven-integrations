@@ -57,6 +57,23 @@ def emit_error(message: str, *, code: int = 1) -> NoReturn:
     sys.exit(code)
 
 
+def cli_main(entry_point: Callable[[], None]) -> None:
+    """Run a CLI entry point, ensuring non-zero exit on any failure.
+
+    Catches uncaught exceptions and exits with code 1. Propagates SystemExit
+    and KeyboardInterrupt so emit_error() and user interrupt work correctly.
+    """
+    try:
+        entry_point()
+    except SystemExit:
+        raise
+    except KeyboardInterrupt:
+        raise
+    except BaseException as exc:
+        click.echo(f"Error: {exc}", err=True)
+        sys.exit(1)
+
+
 class OutputFormatter:
     """Stateful formatter used inside a single command invocation."""
 

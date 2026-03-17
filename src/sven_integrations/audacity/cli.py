@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import click
 
-from ..shared import emit, emit_error, emit_result
+from ..shared import cli_main, emit, emit_error, emit_result
 from .backend import AudacityBackend, AudacityConnectionError
 from .core import clips as clip_mod
 from .core import effects as fx_mod
@@ -197,8 +197,7 @@ def track_list(ctx: click.Context) -> None:
     session = _get_session(ctx.obj.get("session_name", "default"))
     proj = session.get_project()
     if proj is None:
-        emit("No project loaded in session")
-        return
+        emit_error("No project in session")
     tracks = [t.to_dict() for t in proj.tracks]
     emit_result(f"{len(tracks)} track(s)", tracks)
 
@@ -707,15 +706,20 @@ def media_check(ctx: click.Context) -> None:
         emit_error("No project in session")
         return
     result = media_mod.check_project_media(proj)
-    status = "OK" if result["ok"] else f"{len(result['missing'])} missing file(s)"
-    emit_result(status, result)
+    if not result["ok"]:
+        emit_error(
+            f"{len(result['missing'])} missing file(s): "
+            + ", ".join(result["missing"][:5])
+            + (" ..." if len(result["missing"]) > 5 else "")
+        )
+    emit_result("OK", result)
 
 
 # ---------------------------------------------------------------------------
 # Entry point
 
 def main() -> None:
-    audacity_cli()
+    cli_main(audacity_cli)
 
 
 if __name__ == "__main__":

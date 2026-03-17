@@ -7,7 +7,7 @@ import sys
 
 import click
 
-from ..shared import emit, emit_error, emit_json, emit_result
+from ..shared import cli_main, emit, emit_error, emit_json, emit_result
 from .backend import ComfyBackend, ComfyError
 from .core import images as images_mod
 from .core import models as models_mod
@@ -596,7 +596,7 @@ def cmd_repl(ctx: click.Context) -> None:
 
 
 def main() -> None:
-    comfyui_cli()
+    cli_main(comfyui_cli)
 
 
 if __name__ == "__main__":

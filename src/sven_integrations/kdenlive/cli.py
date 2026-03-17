@@ -7,6 +7,7 @@ from typing import Optional
 import click
 
 from ..shared import (
+    cli_main,
     emit_error,
     emit_json,
     emit_result,
@@ -741,7 +742,7 @@ def cmd_repl(ctx: click.Context) -> None:
 
 
 def main() -> None:
-    kdenlive_cli()
+    cli_main(kdenlive_cli)
 
 
 if __name__ == "__main__":

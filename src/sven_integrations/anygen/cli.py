@@ -9,7 +9,7 @@ from typing import Any
 
 import click
 
-from ..shared import emit, emit_error, emit_json, emit_result
+from ..shared import cli_main, emit, emit_error, emit_json, emit_result
 from .backend import AnygenBackend, AnygenError
 from .core.verify import VerifyError, verify_file
 from .project import VALID_OPERATIONS, AnygenTask, HistoryEntry
@@ -570,7 +570,7 @@ def cmd_repl(ctx: click.Context) -> None:
 
 
 def main() -> None:
-    anygen_cli()
+    cli_main(anygen_cli)
 
 
 if __name__ == "__main__":

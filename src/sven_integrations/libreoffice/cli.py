@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import click
 
-from ..shared import emit_error, emit_result
+from ..shared import cli_main, emit_error, emit_result
 from .backend import LibreOfficeBackend, LibreOfficeError
 from .core import calc as calc_mod
 from .core import document as doc_mod
@@ -659,7 +659,7 @@ def cmd_repl(ctx: click.Context) -> None:
 # Entry point
 
 def main() -> None:
-    libreoffice_cli()
+    cli_main(libreoffice_cli)
 
 
 if __name__ == "__main__":

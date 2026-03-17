@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import click
 
-from ..shared import emit_error, emit_result
+from ..shared import cli_main, emit_error, emit_result
 from .backend import ObsBackend, ObsConnectionError, ObsRequestError
 from .core import audio as audio_mod
 from .core import filters as filter_mod
@@ -800,7 +800,7 @@ def transition_list(ctx: click.Context) -> None:
 # Entry point
 
 def main() -> None:
-    obs_cli()
+    cli_main(obs_cli)
 
 
 if __name__ == "__main__":

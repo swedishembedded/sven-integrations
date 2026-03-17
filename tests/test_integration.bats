@@ -137,6 +137,12 @@ TOOLS=(
     rm -f "$tmpfile"
 }
 
+@test "sven-integrations-audacity connect exits 1 when pipe does not exist" {
+    run sven-integrations-audacity --json connect
+    [ "$status" -eq 1 ]
+    [[ "$output" == *"pipe not found"* ]] || [[ "$output" == *"Error:"* ]]
+}
+
 @test "sven-integrations-libreoffice --json document new (writer) creates valid JSON" {
     local tmpfile
     tmpfile="$(mktemp /tmp/sven-integrations-test-XXXXXX.json)"

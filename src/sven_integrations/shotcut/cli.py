@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import click
 
-from ..shared import emit_error, emit_json, emit_result
+from ..shared import cli_main, emit_error, emit_json, emit_result
 from .backend import ShotcutBackend, ShotcutError
 from .core import compositing as comp_mod
 from .core import media as media_mod
@@ -644,7 +644,7 @@ def cmd_repl(ctx: click.Context) -> None:
 
 
 def main() -> None:
-    shotcut_cli()
+    cli_main(shotcut_cli)
 
 
 if __name__ == "__main__":

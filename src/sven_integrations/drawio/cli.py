@@ -6,7 +6,7 @@ from pathlib import Path
 
 import click
 
-from ..shared import emit, emit_error, emit_json, emit_result
+from ..shared import cli_main, emit, emit_error, emit_json, emit_result
 from .backend import DrawioBackend, DrawioError
 from .drawio_xml import (
     add_connector,
@@ -413,7 +413,7 @@ def cmd_repl(ctx: click.Context) -> None:
 
 
 def main() -> None:
-    drawio_cli()
+    cli_main(drawio_cli)
 
 
 if __name__ == "__main__":
