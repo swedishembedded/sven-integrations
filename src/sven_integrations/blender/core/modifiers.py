@@ -12,7 +12,6 @@ from typing import Any
 
 from ..project import BlenderProject
 
-
 # ---------------------------------------------------------------------------
 # Modifier registry
 #

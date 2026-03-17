@@ -2,20 +2,19 @@
 
 from __future__ import annotations
 
-from unittest.mock import MagicMock, call
+from unittest.mock import MagicMock
 
 import pytest
 
-from sven_integrations.obs_studio.project import ObsSetup, ObsScene, ObsSource
-from sven_integrations.obs_studio.backend import ObsBackend, ObsConnectionError, ObsRequestError
-from sven_integrations.obs_studio.core import scenes as scene_mod
-from sven_integrations.obs_studio.core import recording as rec_mod
-from sven_integrations.obs_studio.core import sources as src_mod
+from sven_integrations.obs_studio.backend import ObsBackend, ObsConnectionError
 from sven_integrations.obs_studio.core import audio as audio_mod
 from sven_integrations.obs_studio.core import filters as filter_mod
 from sven_integrations.obs_studio.core import output as output_mod
+from sven_integrations.obs_studio.core import recording as rec_mod
+from sven_integrations.obs_studio.core import scenes as scene_mod
+from sven_integrations.obs_studio.core import sources as src_mod
 from sven_integrations.obs_studio.core import transitions as trans_mod
-
+from sven_integrations.obs_studio.project import ObsScene, ObsSetup, ObsSource
 
 # ---------------------------------------------------------------------------
 # ObsSource tests

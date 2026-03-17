@@ -13,7 +13,7 @@ from __future__ import annotations
 import functools
 import json
 import sys
-from typing import Any, Callable, TypeVar
+from typing import Any, Callable, NoReturn, TypeVar
 
 import click
 
@@ -51,7 +51,7 @@ def emit_result(human_msg: str, json_payload: dict[str, Any]) -> None:
         click.echo(human_msg)
 
 
-def emit_error(message: str, *, code: int = 1) -> None:
+def emit_error(message: str, *, code: int = 1) -> NoReturn:
     """Write an error to stderr and exit with non-zero code."""
     click.echo(f"Error: {message}", err=True)
     sys.exit(code)

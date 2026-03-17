@@ -47,15 +47,54 @@ def _save_project(sess: KdenliveSession, proj: KdenliveProject) -> None:
 
 @click.group()
 @click.option("--session", "-s", default="default", help="Session name.")
+@click.option(
+    "--project", "-p", "project_path", default=None,
+    help="Load/save project state from this JSON file (idempotent; preferred for agents).",
+)
 @click.option("--json", "use_json", is_flag=True, default=False, help="Emit JSON output.")
 @click.pass_context
-def kdenlive_cli(ctx: click.Context, session: str, use_json: bool) -> None:
+def kdenlive_cli(ctx: click.Context, session: str, project_path: str | None, use_json: bool) -> None:
     """Kdenlive CLI — control Kdenlive video editing via the command line."""
     from ..shared.output import set_json_mode
 
     set_json_mode(use_json)
     ctx.ensure_object(dict)
     ctx.obj["session"] = session
+    if project_path is not None:
+        sess = _get_session(session)
+        sess.set_project_file(project_path)
+        sess.save()
+
+
+# ---------------------------------------------------------------------------
+# project group
+
+
+@kdenlive_cli.group("project")
+def project_group() -> None:
+    """Project management commands."""
+
+
+@project_group.command("new")
+@click.option("--name", default="Untitled", show_default=True, help="Project name.")
+@click.option("--profile", default="hdv_720_25p", show_default=True, help="MLT profile name.")
+@click.option("--output", "-o", "output_path", default=None, help="Write project JSON to this file.")
+@click.pass_context
+def project_new(ctx: click.Context, name: str, profile: str, output_path: str | None) -> None:
+    """Create a new empty Kdenlive project in the session."""
+    import json as _json_mod
+    from pathlib import Path
+    sess = _get_session(ctx.obj["session"])
+    proj = KdenliveProject(profile_name=profile)
+    _save_project(sess, proj)
+    if output_path is not None:
+        p = Path(output_path)
+        p.parent.mkdir(parents=True, exist_ok=True)
+        p.write_text(_json_mod.dumps({"name": name, "profile": profile, **proj.to_dict()}, indent=2), encoding="utf-8")
+    emit_result(
+        f"Kdenlive project {name!r} created.",
+        {"ok": True, "name": name, "profile": profile},
+    )
 
 
 # ---------------------------------------------------------------------------

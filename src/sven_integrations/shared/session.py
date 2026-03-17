@@ -13,7 +13,9 @@ import os
 import time
 from dataclasses import asdict, dataclass, field
 from pathlib import Path
-from typing import Any
+from typing import Any, TypeVar
+
+_S = TypeVar("_S", bound="BaseSession")
 
 
 class SessionError(RuntimeError):
@@ -80,8 +82,32 @@ class BaseSession:
             ) from exc
         return True
 
+    def set_project_file(self, path: Path | str) -> None:
+        """Associate an external JSON project file with this session.
+
+        If the file exists it is loaded immediately, replacing the current
+        session data.  The path is stored under the ``__project_file__`` key
+        so that subsequent :meth:`save` calls also write to the file,
+        keeping it in sync for agent use.
+        """
+        path = Path(path)
+        project_file_key = "__project_file__"
+        self.data[project_file_key] = str(path)
+        if path.exists():
+            try:
+                raw = json.loads(path.read_text(encoding="utf-8"))
+                if isinstance(raw, dict):
+                    self.data = {**raw, project_file_key: str(path)}
+            except (json.JSONDecodeError, OSError):
+                pass
+
     def save(self) -> None:
-        """Persist session to disk atomically."""
+        """Persist session to disk atomically.
+
+        When ``__project_file__`` is present in :attr:`data`, the project
+        state is also written to that external file so it can be passed to
+        other commands via ``-p / --project``.
+        """
         self.meta.touch()
         tmp = self._path.with_suffix(".tmp")
         tmp.write_text(
@@ -92,6 +118,13 @@ class BaseSession:
             )
         )
         tmp.replace(self._path)
+        proj_file_str = self.data.get("__project_file__")
+        if proj_file_str:
+            pf = Path(proj_file_str)
+            pf.parent.mkdir(parents=True, exist_ok=True)
+            tmp2 = pf.with_suffix(".tmp")
+            tmp2.write_text(json.dumps(self.data, indent=2, default=str), encoding="utf-8")
+            tmp2.replace(pf)
 
     def delete(self) -> bool:
         """Remove this session file.  Returns True if it existed."""
@@ -112,7 +145,7 @@ class BaseSession:
         return sorted(p.stem for p in directory.glob("*.json"))
 
     @classmethod
-    def open_or_create(cls, name: str = "default") -> "BaseSession":
+    def open_or_create(cls: type[_S], name: str = "default") -> _S:
         """Return a loaded session or a fresh one with the given name."""
         s = cls(name)
         s.load()

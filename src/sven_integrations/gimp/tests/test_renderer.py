@@ -12,17 +12,14 @@ Tests verify that:
 from __future__ import annotations
 
 import json
-import os
 import subprocess
-import sys
 from pathlib import Path
 
 import pytest
 from PIL import Image
 
+from sven_integrations.gimp.core.renderer import RenderError, render_project
 from sven_integrations.gimp.project import DrawOperation, FilterInfo, GimpProject, LayerInfo
-from sven_integrations.gimp.core.renderer import render_project, RenderError
-
 
 # ---------------------------------------------------------------------------
 # Fixtures

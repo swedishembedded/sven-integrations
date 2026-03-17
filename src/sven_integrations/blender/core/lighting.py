@@ -9,7 +9,7 @@ statements suitable for use with
 
 from __future__ import annotations
 
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from typing import Any, Literal
 
 from ..project import BlenderProject

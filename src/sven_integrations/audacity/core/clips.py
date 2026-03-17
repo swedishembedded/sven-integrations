@@ -5,7 +5,7 @@ from __future__ import annotations
 import os
 import uuid
 import wave
-from dataclasses import dataclass, field, asdict
+from dataclasses import asdict, dataclass
 from typing import Any
 
 from ..project import AudioProject

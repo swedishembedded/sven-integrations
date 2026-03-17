@@ -17,7 +17,6 @@ from .core.diagrams import (
 from .project import MermaidDiagram, MermaidProject
 from .session import MermaidSession
 
-
 # ---------------------------------------------------------------------------
 # Context helpers
 # ---------------------------------------------------------------------------
@@ -47,15 +46,53 @@ def _save_project(session: MermaidSession, project: MermaidProject) -> None:
 
 @click.group("mermaid")
 @click.option("--session", "-s", default="default", help="Session name.")
+@click.option(
+    "--project", "-p", "project_path", default=None,
+    help="Load/save project state from this JSON file (idempotent; preferred for agents).",
+)
 @click.option("--json", "use_json", is_flag=True, default=False, help="JSON output.")
 @click.pass_context
-def mermaid_cli(ctx: click.Context, session: str, use_json: bool) -> None:
+def mermaid_cli(ctx: click.Context, session: str, project_path: str | None, use_json: bool) -> None:
     """Mermaid diagram control harness for AI agents."""
     ctx.ensure_object(dict)
     ctx.obj["session"] = session
     ctx.obj["json"] = use_json
     from ..shared.output import set_json_mode
     set_json_mode(use_json)
+    if project_path is not None:
+        sess = _get_session(ctx)
+        sess.set_project_file(project_path)
+        sess.save()
+
+
+# ---------------------------------------------------------------------------
+# project group
+# ---------------------------------------------------------------------------
+
+
+@mermaid_cli.group("project")
+def project_group() -> None:
+    """Project-level management commands."""
+
+
+@project_group.command("new")
+@click.option("--title", default="Untitled", show_default=True, help="Project title.")
+@click.option("--theme", default="default", show_default=True, help="Default diagram theme.")
+@click.option("--output", "-o", "output_path", default=None, help="Write project JSON to this file.")
+@click.pass_context
+def project_new(ctx: click.Context, title: str, theme: str, output_path: str | None) -> None:
+    """Create a new empty Mermaid project in the session."""
+    sess = _get_session(ctx)
+    proj = MermaidProject(name=title, default_theme=theme)
+    _save_project(sess, proj)
+    if output_path is not None:
+        p = Path(output_path)
+        p.parent.mkdir(parents=True, exist_ok=True)
+        p.write_text(json.dumps(proj.to_dict(), indent=2), encoding="utf-8")
+    emit_result(
+        f"Mermaid project {title!r} created.",
+        {"ok": True, "title": title, "theme": theme},
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -68,7 +105,7 @@ def mermaid_cli(ctx: click.Context, session: str, use_json: bool) -> None:
 @click.option("--file", "input_file", default=None, type=click.Path(), help="Input .mmd file.")
 @click.option("--type", "diagram_type", default="flowchart")
 @click.option("--theme", default="default")
-@click.option("--output", "-o", default=None)
+@click.option("--output", "-o", required=True, help="Absolute output path (e.g. /tmp/diagram.png).")
 @click.option("--format", "fmt", default="png", type=click.Choice(["png", "svg", "pdf"]))
 @click.pass_context
 def cmd_render(
@@ -77,7 +114,7 @@ def cmd_render(
     input_file: str | None,
     diagram_type: str,
     theme: str,
-    output: str | None,
+    output: str,
     fmt: str,
 ) -> None:
     """Render a Mermaid definition to an image."""
@@ -87,7 +124,7 @@ def cmd_render(
         emit_error("Provide a definition or --file.")
     diag = MermaidDiagram(diagram_type=diagram_type, definition=definition, theme=theme)
     src = diag.render_src()
-    out_path = output or f"diagram.{fmt}"
+    out_path = output
     be = MermaidBackend()
     try:
         if be.is_mmdc_available():

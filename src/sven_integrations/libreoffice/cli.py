@@ -4,16 +4,15 @@ from __future__ import annotations
 
 import click
 
-from ..shared import emit, emit_result, emit_error, emit_json
+from ..shared import emit_error, emit_result
 from .backend import LibreOfficeBackend, LibreOfficeError
-from .session import LibreOfficeSession
-from .project import OfficeDocument, SheetInfo
-from .core import writer as writer_mod
 from .core import calc as calc_mod
-from .core import impress as impress_mod
-from .core import export as export_mod
 from .core import document as doc_mod
+from .core import impress as impress_mod
 from .core import styles as styles_mod
+from .core import writer as writer_mod
+from .project import OfficeDocument
+from .session import LibreOfficeSession
 
 
 def _get_backend() -> LibreOfficeBackend:
@@ -30,15 +29,25 @@ def _get_session(name: str) -> LibreOfficeSession:
 @click.group()
 @click.option("--session", "-s", "session_name", default="default",
               help="Session name for persisting state.")
+@click.option(
+    "--project", "-p", "project_path", default=None,
+    help="Load/save project state from this JSON file (idempotent; preferred for agents).",
+)
 @click.option("--json", "use_json", is_flag=True, default=False,
               help="Emit machine-readable JSON output.")
 @click.pass_context
-def libreoffice_cli(ctx: click.Context, session_name: str, use_json: bool) -> None:
+def libreoffice_cli(
+    ctx: click.Context, session_name: str, project_path: str | None, use_json: bool
+) -> None:
     """LibreOffice integration — headless document creation and conversion."""
     from ..shared.output import set_json_mode
     set_json_mode(use_json)
     ctx.ensure_object(dict)
     ctx.obj["session_name"] = session_name
+    if project_path is not None:
+        sess = _get_session(session_name)
+        sess.set_project_file(project_path)
+        sess.save()
 
 
 # ---------------------------------------------------------------------------
@@ -381,19 +390,26 @@ def document_group() -> None:
 @click.option("--type", "doc_type",
               type=click.Choice(["writer", "calc", "impress", "draw"]),
               default="writer", help="Document type")
-@click.option("--name", "-n", required=True, help="Document name / title")
+@click.option("--name", "-n", default="Untitled", show_default=True, help="Document name / title")
 @click.option("--profile", default="a4", help="Page profile (a4, letter, legal, …)")
+@click.option("--output", "-o", "output_path", default=None, help="Write session JSON to this file.")
 @click.pass_context
-def document_new(ctx: click.Context, doc_type: str, name: str, profile: str) -> None:
+def document_new(ctx: click.Context, doc_type: str, name: str, profile: str, output_path: str | None) -> None:
     """Create a new document in the session."""
+    import json as _json_mod
+    from pathlib import Path
     session = _get_session(ctx.obj.get("session_name", "default"))
     try:
         office_doc = doc_mod.create_document(doc_type, name, profile)
         session.data["office_doc"] = office_doc.to_dict()
         session.save()
+        if output_path is not None:
+            p = Path(output_path)
+            p.parent.mkdir(parents=True, exist_ok=True)
+            p.write_text(_json_mod.dumps(session.data, indent=2), encoding="utf-8")
         emit_result(
             f"{doc_type.capitalize()} document {name!r} created",
-            {"type": doc_type, "name": name, "profile": profile},
+            {"ok": True, "type": doc_type, "name": name, "profile": profile},
         )
     except ValueError as exc:
         emit_error(str(exc))

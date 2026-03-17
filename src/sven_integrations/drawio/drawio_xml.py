@@ -7,7 +7,6 @@ import xml.etree.ElementTree as ET
 
 from .project import CellGeometry, DrawioCell, DrawioDocument, DrawioPage
 
-
 # ---------------------------------------------------------------------------
 # XML construction helpers
 # ---------------------------------------------------------------------------

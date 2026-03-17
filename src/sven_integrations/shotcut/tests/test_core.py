@@ -3,14 +3,15 @@
 from __future__ import annotations
 
 import xml.etree.ElementTree as ET
+from pathlib import Path
 
 import pytest
 
+from sven_integrations.shotcut.core import compositing as comp_mod
 from sven_integrations.shotcut.core import export as export_mod
 from sven_integrations.shotcut.core import filters as filt_mod
-from sven_integrations.shotcut.core import timeline as tl_mod
-from sven_integrations.shotcut.core import compositing as comp_mod
 from sven_integrations.shotcut.core import media as media_mod
+from sven_integrations.shotcut.core import timeline as tl_mod
 from sven_integrations.shotcut.core import transitions as sc_trans_mod
 from sven_integrations.shotcut.project import (
     MltClip,
@@ -342,7 +343,6 @@ class TestMediaCheck:
         assert "/nonexistent/ghost.mp4" in result["missing"]
 
     def test_check_media_files_all_ok(self, tmp_path: "Path") -> None:
-        import os
         f = tmp_path / "clip.mp4"
         f.write_bytes(b"fake")
         proj = ShotcutProject()

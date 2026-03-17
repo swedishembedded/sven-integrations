@@ -66,7 +66,7 @@ def set_active_camera(name: str) -> dict[str, Any]:
     stmts = _preamble() + [
         f'cam_obj = bpy.data.objects.get("{safe}")',
         "if cam_obj is None: raise ValueError(f'Camera object not found: {name!r}')",
-        f"bpy.context.scene.camera = cam_obj",
+        "bpy.context.scene.camera = cam_obj",
     ]
     return {
         "action": "set_active_camera",

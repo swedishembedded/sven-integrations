@@ -7,7 +7,6 @@ from typing import Any
 
 from ..project import OfficeDocument
 
-
 # ---------------------------------------------------------------------------
 # Document profiles
 

@@ -11,7 +11,6 @@ process management and error detection.
 from __future__ import annotations
 
 import subprocess
-from typing import Any
 
 
 class BlenderError(RuntimeError):
@@ -86,12 +85,18 @@ class BlenderBackend:
             cmd.append(blend_file)
         cmd.extend(["--background", "--python-expr", script])
 
-        result = subprocess.run(
-            cmd,
-            capture_output=True,
-            text=True,
-            timeout=self.timeout,
-        )
+        try:
+            result = subprocess.run(
+                cmd,
+                capture_output=True,
+                text=True,
+                timeout=self.timeout,
+            )
+        except FileNotFoundError as exc:
+            raise BlenderError(
+                f"Blender binary not found: {self.executable!r}. "
+                "Install Blender and ensure it is on PATH, or set BLENDER_BIN env variable."
+            ) from exc
         if result.returncode != 0:
             detail = result.stderr.strip() or result.stdout.strip()
             raise BlenderError(

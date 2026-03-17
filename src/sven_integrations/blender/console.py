@@ -2,10 +2,8 @@
 
 from __future__ import annotations
 
-from typing import Any
-
-from ..shared import Console, Style
-from .backend import BlenderBackend, BlenderError
+from ..shared import Console
+from .backend import BlenderBackend
 from .core import materials as mat_ops
 from .core import objects as obj_ops
 from .core import render as render_ops
@@ -74,11 +72,6 @@ class BlenderConsole(Console):
                     return
                 name = parts[1]
                 x, y, z = float(parts[2]), float(parts[3]), float(parts[4])
-                stmts = [
-                    "import bpy",
-                    f'obj = bpy.data.objects.get("{name}")',
-                    f"if obj: obj.location = ({x}, {y}, {z})",
-                ]
                 self.success(f"Move '{name}' to ({x}, {y}, {z}) — script ready.")
             else:
                 self.failure(f"Unknown object subcommand: {sub!r}")

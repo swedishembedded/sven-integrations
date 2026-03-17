@@ -9,12 +9,10 @@ provides the action vocabulary.
 
 from __future__ import annotations
 
-import math
 import uuid
 from typing import Any
 
 from ..project import InkscapeProject, SvgElement
-
 
 # ---------------------------------------------------------------------------
 # Available path boolean operations
@@ -68,7 +66,7 @@ def _record_boolean_op(
 ) -> dict[str, Any]:
     """Record a boolean path operation as a new element, removing sources."""
     elem_a = _require_element(project, id_a)
-    elem_b = _require_element(project, id_b)
+    _require_element(project, id_b)  # validate id_b exists
 
     result_id = str(uuid.uuid4())[:8]
     result_elem = SvgElement(

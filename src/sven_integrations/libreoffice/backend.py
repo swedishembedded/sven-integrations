@@ -90,12 +90,23 @@ class LibreOfficeBackend:
         output_path: str,
         fmt: str,
     ) -> Path:
-        """Open *template_path*, populate it with *data*, and export to *output_path*.
+        """Open *template_path*, convert it to *fmt*, and write to *output_path*.
 
-        This is a convenience wrapper that converts the template to the target
-        format and then copies it to *output_path*.  Full data injection requires
-        a macro or Python-UNO bridge; this backend handles the conversion step.
+        .. note::
+            The *data* dictionary is **not injected** into the document by this
+            method — full data injection requires the Python-UNO bridge (a running
+            LibreOffice instance with socket listener).  If *data* is non-empty,
+            a warning is emitted.  To populate templates use LibreOffice macros
+            or the ``writer`` / ``calc`` command groups which edit XML directly.
         """
+        if data:
+            import warnings
+            warnings.warn(
+                "open_and_export: 'data' parameter is not injected into the document. "
+                "Use 'writer paragraph' / 'calc cell' commands to populate content, "
+                "then call 'export render' to produce the final file.",
+                stacklevel=2,
+            )
         src = Path(template_path)
         out = Path(output_path)
         converted = self.convert(str(src), fmt, str(out.parent))

@@ -17,17 +17,16 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
-from sven_integrations.blender.project import BlenderProject, SceneObject
-from sven_integrations.blender.session import BlenderSession
 from sven_integrations.blender.backend import BlenderBackend, BlenderError
-from sven_integrations.blender.core import scene as scene_ops
-from sven_integrations.blender.core import objects as obj_ops
-from sven_integrations.blender.core import materials as mat_ops
-from sven_integrations.blender.core import render as render_ops
 from sven_integrations.blender.core import animation as anim_ops
 from sven_integrations.blender.core import lighting as light_ops
+from sven_integrations.blender.core import materials as mat_ops
 from sven_integrations.blender.core import modifiers as mod_ops
-
+from sven_integrations.blender.core import objects as obj_ops
+from sven_integrations.blender.core import render as render_ops
+from sven_integrations.blender.core import scene as scene_ops
+from sven_integrations.blender.project import BlenderProject, SceneObject
+from sven_integrations.blender.session import BlenderSession
 
 # ---------------------------------------------------------------------------
 # Fixtures

@@ -4,19 +4,17 @@ from __future__ import annotations
 
 import click
 
-from ..shared import emit, emit_result, emit_error, emit_json, json_output
+from ..shared import emit, emit_error, emit_result
 from .backend import AudacityBackend, AudacityConnectionError
-from .session import AudacitySession
-from .project import AudioProject, AudioTrack
-from .core import tracks as track_mod
-from .core import selection as sel_mod
+from .core import clips as clip_mod
 from .core import effects as fx_mod
 from .core import export as exp_mod
-from .core import clips as clip_mod
 from .core import labels as label_mod
 from .core import media as media_mod
-
-import uuid
+from .core import selection as sel_mod
+from .core import tracks as track_mod
+from .project import AudioProject
+from .session import AudacitySession
 
 # ---------------------------------------------------------------------------
 # Module-level singletons shared across command invocations in one process
@@ -34,15 +32,56 @@ def _get_session(name: str) -> AudacitySession:
 @click.group()
 @click.option("--session", "-s", "session_name", default="default",
               help="Session name to load/save state into.")
+@click.option(
+    "--project", "-p", "project_path", default=None,
+    help="Load/save project state from this JSON file (idempotent; preferred for agents).",
+)
 @click.option("--json", "use_json", is_flag=True, default=False,
               help="Emit machine-readable JSON output.")
 @click.pass_context
-def audacity_cli(ctx: click.Context, session_name: str, use_json: bool) -> None:
+def audacity_cli(
+    ctx: click.Context, session_name: str, project_path: str | None, use_json: bool
+) -> None:
     """Audacity integration — control a running Audacity instance via mod-script-pipe."""
     from ..shared.output import set_json_mode
     set_json_mode(use_json)
     ctx.ensure_object(dict)
     ctx.obj["session_name"] = session_name
+    if project_path is not None:
+        sess = _get_session(session_name)
+        sess.set_project_file(project_path)
+        sess.save()
+
+
+# ---------------------------------------------------------------------------
+# project group
+
+
+@audacity_cli.group("project")
+def project_group() -> None:
+    """Project management commands."""
+
+
+@project_group.command("new")
+@click.option("--name", default="Untitled", show_default=True, help="Project name.")
+@click.option("--output", "-o", "output_path", default=None, help="Write project JSON to this file.")
+@click.pass_context
+def project_new(ctx: click.Context, name: str, output_path: str | None) -> None:
+    """Create a new empty audio project in the session."""
+    import json as _json_mod
+    from pathlib import Path
+    sess = AudacitySession.open_or_create(ctx.obj.get("session_name", "default"))
+    proj = AudioProject(name=name)
+    sess.data["project"] = {"name": proj.name, "sample_rate": proj.sample_rate, "channels": proj.channels}
+    sess.save()
+    if output_path is not None:
+        p = Path(output_path)
+        p.parent.mkdir(parents=True, exist_ok=True)
+        p.write_text(_json_mod.dumps(sess.data, indent=2), encoding="utf-8")
+    emit_result(
+        f"Audio project {name!r} created.",
+        {"ok": True, "name": name},
+    )
 
 
 # ---------------------------------------------------------------------------

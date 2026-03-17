@@ -6,7 +6,6 @@ from pathlib import Path
 
 from ..backend import LibreOfficeBackend
 
-
 _FORMAT_MAP: dict[str, list[str]] = {
     "writer": ["pdf", "docx", "odt", "rtf", "txt", "html"],
     "calc": ["pdf", "xlsx", "ods", "csv", "html"],

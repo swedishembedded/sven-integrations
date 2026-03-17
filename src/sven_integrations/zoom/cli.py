@@ -35,15 +35,23 @@ def _require_token(sess: ZoomSession) -> str:
 
 @click.group()
 @click.option("--session", "-s", default="default", help="Session name.")
+@click.option(
+    "--project", "-p", "project_path", default=None,
+    help="Load/save project state from this JSON file (idempotent; preferred for agents).",
+)
 @click.option("--json", "use_json", is_flag=True, default=False, help="Emit JSON output.")
 @click.pass_context
-def zoom_cli(ctx: click.Context, session: str, use_json: bool) -> None:
+def zoom_cli(ctx: click.Context, session: str, project_path: str | None, use_json: bool) -> None:
     """Zoom CLI — manage meetings and recordings from the command line."""
     from ..shared.output import set_json_mode
 
     set_json_mode(use_json)
     ctx.ensure_object(dict)
     ctx.obj["session"] = session
+    if project_path is not None:
+        sess = _get_session(session)
+        sess.set_project_file(project_path)
+        sess.save()
 
 
 # ---------------------------------------------------------------------------

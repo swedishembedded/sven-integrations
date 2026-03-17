@@ -10,13 +10,13 @@ from __future__ import annotations
 
 import json
 from pathlib import Path
+from typing import Any
 
 import click
 
-from ..shared import emit, emit_error, emit_json, emit_result, OutputFormatter
+from ..shared import OutputFormatter, emit, emit_error, emit_json, emit_result
 from ..shared.output import set_json_mode
 from .core import canvas as canvas_ops
-from .core import export as export_ops
 from .core import filters as filter_ops
 from .core import layers as layer_ops
 from .project import DrawOperation, FilterInfo, GimpProject, LayerInfo
@@ -117,7 +117,7 @@ def gimp_cli(ctx: click.Context, session: str, project_path: Path | None, use_js
 def cmd_new(ctx: click.Context, width: int, height: int, mode: str, dpi: float) -> None:
     """Create a new blank GIMP image."""
     sess = GimpSession.open_or_create(ctx.obj["session_name"])
-    proj = sess.new_project(width, height, color_mode=mode, dpi=dpi)
+    sess.new_project(width, height, color_mode=mode, dpi=dpi)
     emit_result(
         f"Created {width}×{height} {mode} image at {dpi} DPI",
         {"ok": True, "width": width, "height": height, "color_mode": mode, "dpi": dpi},
@@ -401,7 +401,7 @@ def export_render(
         return
     sess, proj = pair
     try:
-        from .core.renderer import render_project, RenderError
+        from .core.renderer import render_project
         result = render_project(proj, output_path, fmt=fmt_key, quality=quality)
         emit_result(
             f"Rendered {result['width']}×{result['height']} {fmt_key.upper()} → {output_path} ({result['size_bytes']} bytes)",
@@ -692,7 +692,7 @@ def layer_list(ctx: click.Context) -> None:
 def layer_opacity(ctx: click.Context, layer_id: int, value: float) -> None:
     """Set the opacity of a layer (0.0–1.0)."""
     try:
-        result = layer_ops.set_layer_opacity(layer_id, value)
+        layer_ops.set_layer_opacity(layer_id, value)
     except ValueError as exc:
         emit_error(str(exc))
         return
@@ -1413,7 +1413,7 @@ def session_undo(ctx: click.Context) -> None:
 @click.pass_context
 def session_redo(ctx: click.Context) -> None:
     """Redo the last undone operation."""
-    emit_result("Redo not implemented", {"ok": False, "message": "Redo not implemented"})
+    emit_error("redo is not supported — replay your commands using the project file instead")
 
 
 @session_group.command("history")

@@ -4,7 +4,6 @@ from __future__ import annotations
 
 from ..backend import AudacityBackend
 
-
 _FORMAT_IDS = {
     "wav": "WAV",
     "mp3": "MP3",

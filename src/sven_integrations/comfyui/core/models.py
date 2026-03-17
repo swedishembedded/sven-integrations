@@ -92,8 +92,8 @@ def list_all_node_classes(backend: ComfyBackend) -> list[str]:
     """Return the names of all node classes registered on the ComfyUI server."""
     try:
         url = f"{backend.server_url}/object_info"
-        import urllib.request
         import json
+        import urllib.request
         req = urllib.request.Request(url)
         with urllib.request.urlopen(req, timeout=60) as resp:
             data: dict[str, Any] = json.loads(resp.read())

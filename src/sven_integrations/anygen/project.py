@@ -1,139 +1,97 @@
-"""AnyGen project and task models."""
+"""AnyGen task and session data models."""
 
 from __future__ import annotations
 
 import time
+import uuid
 from dataclasses import dataclass, field
-from typing import Any, Literal
+from typing import Any
 
-TaskStatus = Literal["pending", "running", "completed", "failed"]
-ProviderName = Literal["openai", "anthropic", "ollama", "local"]
+OPERATION_EXTENSIONS: dict[str, str] = {
+    "slide": ".pptx",
+    "doc": ".docx",
+    "pdf": ".pdf",
+    "image": ".png",
+    "data": ".json",
+}
 
-
-@dataclass
-class GenerationParams:
-    temperature: float = 0.7
-    max_tokens: int = 1024
-    top_p: float | None = None
-    stop_sequences: list[str] = field(default_factory=list)
-
-    def to_dict(self) -> dict[str, Any]:
-        return {
-            "temperature": self.temperature,
-            "max_tokens": self.max_tokens,
-            "top_p": self.top_p,
-            "stop_sequences": self.stop_sequences,
-        }
-
-    @classmethod
-    def from_dict(cls, d: dict[str, Any]) -> "GenerationParams":
-        return cls(
-            temperature=float(d.get("temperature", 0.7)),
-            max_tokens=int(d.get("max_tokens", 1024)),
-            top_p=d.get("top_p"),
-            stop_sequences=list(d.get("stop_sequences", [])),
-        )
+VALID_OPERATIONS: frozenset[str] = frozenset(OPERATION_EXTENSIONS)
 
 
 @dataclass
-class GenerationTask:
-    task_id: str
+class AnygenTask:
+    """A single content-generation task tracked in the session."""
+
+    local_id: str       # local UUID (always set; used before remote_id is known)
+    operation: str      # slide | doc | pdf | image | data
     prompt: str
-    model: str
-    provider: str
-    parameters: GenerationParams = field(default_factory=GenerationParams)
-
-    def to_dict(self) -> dict[str, Any]:
-        return {
-            "task_id": self.task_id,
-            "prompt": self.prompt,
-            "model": self.model,
-            "provider": self.provider,
-            "parameters": self.parameters.to_dict(),
-        }
-
-    @classmethod
-    def from_dict(cls, d: dict[str, Any]) -> "GenerationTask":
-        return cls(
-            task_id=d["task_id"],
-            prompt=d["prompt"],
-            model=d["model"],
-            provider=d["provider"],
-            parameters=GenerationParams.from_dict(d.get("parameters", {})),
-        )
-
-
-@dataclass
-class GenerationResult:
-    task_id: str
-    status: str = "pending"
-    output: str | None = None
-    error: str | None = None
+    task_id: str = ""   # remote task ID returned by the API after submission
+    status: str = "pending"  # pending | queued | running | completed | failed
     created_at: float = field(default_factory=time.time)
     completed_at: float | None = None
+    output_path: str | None = None   # local filesystem path after download
+    output_url: str | None = None    # remote URL provided by the API
+    error: str | None = None
     metadata: dict[str, Any] = field(default_factory=dict)
+    submitted: bool = False          # True once POSTed to the API
 
     def to_dict(self) -> dict[str, Any]:
         return {
+            "local_id": self.local_id,
+            "operation": self.operation,
+            "prompt": self.prompt,
             "task_id": self.task_id,
             "status": self.status,
-            "output": self.output,
-            "error": self.error,
             "created_at": self.created_at,
             "completed_at": self.completed_at,
+            "output_path": self.output_path,
+            "output_url": self.output_url,
+            "error": self.error,
             "metadata": self.metadata,
+            "submitted": self.submitted,
         }
 
     @classmethod
-    def from_dict(cls, d: dict[str, Any]) -> "GenerationResult":
+    def from_dict(cls, d: dict[str, Any]) -> "AnygenTask":
+        raw_local = d.get("local_id") or d.get("task_id") or str(uuid.uuid4())
         return cls(
-            task_id=d["task_id"],
+            local_id=raw_local,
+            operation=d.get("operation", "data"),
+            prompt=d.get("prompt", ""),
+            task_id=d.get("task_id", ""),
             status=d.get("status", "pending"),
-            output=d.get("output"),
-            error=d.get("error"),
             created_at=float(d.get("created_at", time.time())),
             completed_at=d.get("completed_at"),
+            output_path=d.get("output_path"),
+            output_url=d.get("output_url"),
+            error=d.get("error"),
             metadata=dict(d.get("metadata", {})),
+            submitted=bool(d.get("submitted", False)),
         )
 
 
 @dataclass
-class AnygenProject:
-    name: str = "default"
-    provider_config: dict[str, Any] = field(default_factory=dict)
-    tasks: list[GenerationTask] = field(default_factory=list)
-    results: list[GenerationResult] = field(default_factory=list)
+class HistoryEntry:
+    """One entry in the session undo/redo history."""
 
-    def add_task(self, task: GenerationTask) -> None:
-        self.tasks.append(task)
-
-    def get_result(self, task_id: str) -> GenerationResult | None:
-        for r in self.results:
-            if r.task_id == task_id:
-                return r
-        return None
-
-    def pending_tasks(self) -> list[GenerationTask]:
-        completed_ids = {r.task_id for r in self.results if r.status in ("completed", "failed")}
-        return [t for t in self.tasks if t.task_id not in completed_ids]
-
-    def completed_tasks(self) -> list[GenerationTask]:
-        completed_ids = {r.task_id for r in self.results if r.status == "completed"}
-        return [t for t in self.tasks if t.task_id in completed_ids]
+    action: str
+    task_id: str | None = None
+    timestamp: float = field(default_factory=time.time)
+    details: dict[str, Any] = field(default_factory=dict)
 
     def to_dict(self) -> dict[str, Any]:
         return {
-            "name": self.name,
-            "provider_config": self.provider_config,
-            "tasks": [t.to_dict() for t in self.tasks],
-            "results": [r.to_dict() for r in self.results],
+            "action": self.action,
+            "task_id": self.task_id,
+            "timestamp": self.timestamp,
+            "details": self.details,
         }
 
     @classmethod
-    def from_dict(cls, d: dict[str, Any]) -> "AnygenProject":
+    def from_dict(cls, d: dict[str, Any]) -> "HistoryEntry":
         return cls(
-            name=d.get("name", "default"),
-            provider_config=dict(d.get("provider_config", {})),
-            tasks=[GenerationTask.from_dict(t) for t in d.get("tasks", [])],
-            results=[GenerationResult.from_dict(r) for r in d.get("results", [])],
+            action=d["action"],
+            task_id=d.get("task_id"),
+            timestamp=float(d.get("timestamp", time.time())),
+            details=dict(d.get("details", {})),
         )

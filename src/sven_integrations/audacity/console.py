@@ -4,11 +4,11 @@ from __future__ import annotations
 
 from ..shared import Console, Style
 from .backend import AudacityBackend, AudacityConnectionError
-from .session import AudacitySession
-from .core import tracks as track_mod
-from .core import selection as sel_mod
 from .core import effects as fx_mod
 from .core import export as exp_mod
+from .core import selection as sel_mod
+from .core import tracks as track_mod
+from .session import AudacitySession
 
 
 class AudacityConsole(Console):

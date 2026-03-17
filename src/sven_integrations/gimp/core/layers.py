@@ -20,7 +20,7 @@ def create_layer(
 
     The layer is inserted at position 0 (top) of the active image.
     """
-    safe_name = name.replace('"', '\\"')
+    safe_name = name.replace("\\", "\\\\").replace('"', '\\"').replace("\n", " ").replace("\r", "")
     script = (
         f'(let* ((image (car (gimp-image-list))) '
         f'(layer (car (gimp-layer-new image {width} {height} RGBA-IMAGE '

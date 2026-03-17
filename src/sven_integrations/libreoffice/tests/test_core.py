@@ -3,44 +3,38 @@
 from __future__ import annotations
 
 from pathlib import Path
-from unittest.mock import MagicMock, patch
+from unittest.mock import MagicMock
 
 import pytest
 
-from sven_integrations.libreoffice.project import OfficeDocument, SheetInfo
 from sven_integrations.libreoffice.backend import LibreOfficeBackend, LibreOfficeError
-from sven_integrations.libreoffice.core import writer as writer_mod
 from sven_integrations.libreoffice.core import calc as calc_mod
 from sven_integrations.libreoffice.core import impress as impress_mod
-from sven_integrations.libreoffice.core.export import (
-    get_supported_formats,
-    export_pdf,
-    export_docx,
-    export_xlsx,
-)
-from sven_integrations.libreoffice.core import document as doc_mod
-from sven_integrations.libreoffice.core import styles as styles_mod
+from sven_integrations.libreoffice.core import writer as writer_mod
 from sven_integrations.libreoffice.core.document import (
-    DocumentProfile,
-    DocumentSettings,
-    DOCUMENT_PROFILES,
     create_document,
     get_document_info,
     list_profiles,
     set_document_property,
 )
+from sven_integrations.libreoffice.core.export import (
+    export_docx,
+    export_pdf,
+    export_xlsx,
+    get_supported_formats,
+)
 from sven_integrations.libreoffice.core.styles import (
-    StyleDefinition,
-    BUILT_IN_STYLES,
     ALLOWED_PROPERTIES,
+    BUILT_IN_STYLES,
+    StyleDefinition,
+    apply_style,
     create_style,
+    get_style,
+    list_styles,
     modify_style,
     remove_style,
-    list_styles,
-    get_style,
-    apply_style,
 )
-
+from sven_integrations.libreoffice.project import OfficeDocument, SheetInfo
 
 # ---------------------------------------------------------------------------
 # SheetInfo tests
@@ -532,7 +526,7 @@ class TestStylesCore:
 
     def test_apply_style_builtin(self) -> None:
         doc = _make_writer_doc()
-        result = apply_style(doc, "Heading 1", content_index=0)
+        apply_style(doc, "Heading 1", content_index=0)
         assert doc.extra["applied_styles"]["0"] == "Heading 1"
 
     def test_apply_style_missing_raises(self) -> None:
@@ -575,7 +569,6 @@ class TestLibreOfficeBackend:
             backend.convert(str(tmp_path / "nonexistent.odt"), "pdf")
 
     def test_run_raises_on_nonzero_exit(self) -> None:
-        import subprocess
         backend = LibreOfficeBackend.__new__(LibreOfficeBackend)
         backend._binary = "false"
         backend._timeout = 10

@@ -7,7 +7,7 @@ from ..backend import AudacityBackend
 
 def new_mono_track(backend: AudacityBackend, name: str) -> str:
     """Create a new mono audio track named *name*."""
-    reply = backend.send_command(f"NewMonoTrack")
+    reply = backend.send_command("NewMonoTrack")
     if name:
         backend.send_command(f"SetTrackStatus: Name={name!r}")
     return reply

@@ -6,7 +6,9 @@ import json
 import unittest.mock as mock
 from pathlib import Path
 
-
+from sven_integrations.comfyui.backend import ComfyBackend
+from sven_integrations.comfyui.core import images as images_mod
+from sven_integrations.comfyui.core import models as models_mod
 from sven_integrations.comfyui.core.queue import get_progress
 from sven_integrations.comfyui.core.workflow import (
     build_img2img_workflow,
@@ -16,16 +18,12 @@ from sven_integrations.comfyui.core.workflow import (
     save_workflow_json,
     set_workflow_seed,
 )
-from sven_integrations.comfyui.core import images as images_mod
-from sven_integrations.comfyui.core import models as models_mod
-from sven_integrations.comfyui.backend import ComfyBackend
 from sven_integrations.comfyui.project import (
     ComfyProject,
     ComfyWorkflow,
     NodeConnection,
     WorkflowNode,
 )
-
 
 # ---------------------------------------------------------------------------
 # WorkflowNode model

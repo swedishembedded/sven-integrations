@@ -7,11 +7,10 @@ maps to one logical domain: layers, filters, canvas, export, undo/redo.
 
 from __future__ import annotations
 
-import shlex
 from typing import Any
 
-from ..shared import Console, Style
-from .backend import GimpBackend, GimpError
+from ..shared import Console
+from .backend import GimpBackend
 from .core import canvas as canvas_ops
 from .core import export as export_ops
 from .core import filters as filter_ops
@@ -125,23 +124,23 @@ class GimpConsole(Console):
         try:
             if sub == "blur":
                 r = float(parts[1]) if len(parts) > 1 else 2.0
-                result = filter_ops.apply_blur(r)
+                filter_ops.apply_blur(r)
                 self.success(f"Blur applied (radius={r})")
             elif sub == "sharpen":
                 amt = float(parts[1]) if len(parts) > 1 else 50.0
-                result = filter_ops.apply_sharpen(amt)
+                filter_ops.apply_sharpen(amt)
                 self.success(f"Sharpen applied (amount={amt})")
             elif sub == "unsharp":
                 r = float(parts[1]) if len(parts) > 1 else 5.0
                 a = float(parts[2]) if len(parts) > 2 else 0.5
                 t = int(parts[3]) if len(parts) > 3 else 0
-                result = filter_ops.apply_unsharp_mask(r, a, t)
+                filter_ops.apply_unsharp_mask(r, a, t)
                 self.success(f"Unsharp mask applied (r={r}, a={a}, t={t})")
             elif sub == "levels":
                 if len(parts) < 6:
                     self.failure("Usage: filter levels <in_lo> <in_hi> <gamma> <out_lo> <out_hi>")
                     return
-                result = filter_ops.apply_levels(
+                filter_ops.apply_levels(
                     (int(parts[1]), int(parts[2]), float(parts[3])),
                     (int(parts[4]), int(parts[5])),
                 )
@@ -150,7 +149,7 @@ class GimpConsole(Console):
                 hue = float(parts[1]) if len(parts) > 1 else 0.0
                 sat = float(parts[2]) if len(parts) > 2 else 0.0
                 lit = float(parts[3]) if len(parts) > 3 else 0.0
-                result = filter_ops.apply_hue_saturation(hue, sat, lit)
+                filter_ops.apply_hue_saturation(hue, sat, lit)
                 self.success(f"Hue/Sat adjusted (h={hue}, s={sat}, l={lit})")
             else:
                 self.failure(f"Unknown filter subcommand: {sub!r}")
@@ -180,29 +179,29 @@ class GimpConsole(Console):
         try:
             if sub == "crop":
                 x, y, w, h = int(parts[1]), int(parts[2]), int(parts[3]), int(parts[4])
-                result = canvas_ops.crop(x, y, w, h)
+                canvas_ops.crop(x, y, w, h)
                 self.success(f"Cropped to {w}×{h} at ({x},{y})")
             elif sub == "resize":
                 w, h = int(parts[1]), int(parts[2])
                 ox = int(parts[3]) if len(parts) > 3 else 0
                 oy = int(parts[4]) if len(parts) > 4 else 0
-                result = canvas_ops.resize_canvas(w, h, ox, oy)
+                canvas_ops.resize_canvas(w, h, ox, oy)
                 self.success(f"Canvas resized to {w}×{h}")
             elif sub == "scale":
                 w, h = int(parts[1]), int(parts[2])
-                result = canvas_ops.scale_image(w, h)
+                canvas_ops.scale_image(w, h)
                 self.success(f"Image scaled to {w}×{h}")
             elif sub == "rotate":
                 angle = float(parts[1]) if len(parts) > 1 else 90.0
-                result = canvas_ops.rotate(angle)
+                canvas_ops.rotate(angle)
                 self.success(f"Rotated {angle}°")
             elif sub == "flip":
                 direction = parts[1] if len(parts) > 1 else "h"
-                result = canvas_ops.flip(direction)  # type: ignore[arg-type]
+                canvas_ops.flip(direction)  # type: ignore[arg-type]
                 self.success(f"Flipped {'horizontally' if direction == 'h' else 'vertically'}")
             elif sub == "dpi":
                 dpi = float(parts[1]) if len(parts) > 1 else 72.0
-                result = canvas_ops.set_resolution(dpi)
+                canvas_ops.set_resolution(dpi)
                 self.success(f"Resolution set to {dpi} DPI")
             else:
                 self.failure(f"Unknown canvas subcommand: {sub!r}")
@@ -247,7 +246,7 @@ class GimpConsole(Console):
             if handler is None:
                 self.failure(f"Unknown format: {fmt!r}")
                 return
-            result = handler(path)
+            handler(path)
             self.success(f"Export command built for {fmt.upper()} → {path}")
         except export_ops.ExportError as exc:
             self.failure(str(exc))

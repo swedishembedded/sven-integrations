@@ -32,14 +32,19 @@ class ComfyBackend:
 
         Updates ``self.server_url`` if *server_url* is provided.
         Returns True if the server responds to ``/system_stats``.
+        Raises :class:`ComfyError` with setup instructions if unreachable.
         """
         if server_url:
             self.server_url = server_url.rstrip("/")
         try:
             self.get_system_stats()
             return True
-        except ComfyError:
-            return False
+        except ComfyError as exc:
+            raise ComfyError(
+                f"Cannot reach ComfyUI at {self.server_url}: {exc}\n"
+                "Start ComfyUI first:  python main.py  (in the ComfyUI directory)\n"
+                "Then re-run this command."
+            ) from exc
 
     # ------------------------------------------------------------------
     # Queue operations
@@ -93,10 +98,22 @@ class ComfyBackend:
             raise ComfyError(f"Image not found: {image_path!r}")
         boundary = "----sven-boundary"
         file_data = path.read_bytes()
+        # Detect MIME type from file extension rather than hardcoding image/png
+        _MIME_MAP = {
+            ".png": "image/png",
+            ".jpg": "image/jpeg",
+            ".jpeg": "image/jpeg",
+            ".webp": "image/webp",
+            ".gif": "image/gif",
+            ".bmp": "image/bmp",
+            ".tiff": "image/tiff",
+            ".tif": "image/tiff",
+        }
+        content_type = _MIME_MAP.get(path.suffix.lower(), "application/octet-stream")
         body = (
             f"--{boundary}\r\n"
             f'Content-Disposition: form-data; name="image"; filename="{path.name}"\r\n'
-            f"Content-Type: image/png\r\n\r\n"
+            f"Content-Type: {content_type}\r\n\r\n"
         ).encode("utf-8") + file_data + f"\r\n--{boundary}--\r\n".encode("utf-8")
         url = f"{self.server_url}/upload/image"
         req = urllib.request.Request(

@@ -11,10 +11,10 @@ import os
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
-from PIL import Image, ImageDraw, ImageFilter, ImageEnhance, ImageFont
+from PIL import Image, ImageDraw, ImageEnhance, ImageFilter, ImageFont
 
 if TYPE_CHECKING:
-    from ..project import GimpProject, LayerInfo
+    from ..project import DrawOperation, FilterInfo, GimpProject, LayerInfo
 
 
 class RenderError(ValueError):
@@ -75,14 +75,41 @@ def _rgba_to_pil(rgba: tuple[int, int, int, int]) -> tuple[int, int, int, int]:
 
 
 def _load_font(font_name: str, size: int) -> ImageFont.FreeTypeFont | ImageFont.ImageFont:
-    """Try to load a font by name, fall back to default."""
-    candidates = [
-        font_name,
-        f"{font_name}.ttf",
-        f"/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf",
-        f"/usr/share/fonts/truetype/liberation/LiberationSans-Regular.ttf",
-        f"/usr/share/fonts/truetype/freefont/FreeSans.ttf",
+    """Try to load a font by name, fall back to Pillow default.
+
+    Searches platform-appropriate font paths so the renderer works on Linux,
+    macOS, and Windows without requiring a specific font installation.
+    """
+    import platform
+    sys_name = platform.system()
+
+    linux_paths = [
+        "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf",
+        "/usr/share/fonts/truetype/liberation/LiberationSans-Regular.ttf",
+        "/usr/share/fonts/truetype/freefont/FreeSans.ttf",
+        "/usr/share/fonts/TTF/DejaVuSans.ttf",
+        "/usr/local/share/fonts/DejaVuSans.ttf",
     ]
+    macos_paths = [
+        "/System/Library/Fonts/Helvetica.ttc",
+        "/System/Library/Fonts/Arial.ttf",
+        "/Library/Fonts/Arial.ttf",
+        os.path.expanduser("~/Library/Fonts/Arial.ttf"),
+    ]
+    windows_paths = [
+        r"C:\Windows\Fonts\arial.ttf",
+        r"C:\Windows\Fonts\calibri.ttf",
+        r"C:\Windows\Fonts\segoeui.ttf",
+    ]
+
+    candidates = [font_name, f"{font_name}.ttf"]
+    if sys_name == "Darwin":
+        candidates += macos_paths + linux_paths
+    elif sys_name == "Windows":
+        candidates += windows_paths + linux_paths
+    else:
+        candidates += linux_paths + macos_paths
+
     for candidate in candidates:
         try:
             return ImageFont.truetype(candidate, size)
@@ -106,13 +133,18 @@ def _render_layer(layer: "LayerInfo", canvas_w: int, canvas_h: int) -> Image.Ima
     img = Image.new("RGBA", (w, h), bg)
 
     # Load source image if present
-    if layer.source is not None and os.path.exists(layer.source):
+    if layer.source is not None:
+        if not os.path.exists(layer.source):
+            raise RenderError(
+                f"Layer source image not found: {layer.source!r}. "
+                "Use an absolute path to an existing image file."
+            )
         try:
             src = Image.open(layer.source).convert("RGBA")
             src = src.resize((w, h), Image.LANCZOS)
             img = src
-        except Exception:
-            pass
+        except OSError as exc:
+            raise RenderError(f"Cannot open source image {layer.source!r}: {exc}") from exc
 
     draw = ImageDraw.Draw(img)
 
@@ -134,7 +166,6 @@ def _execute_draw_op(draw: ImageDraw.ImageDraw, img: Image.Image, op: "DrawOpera
         x2 = int(p.get("x2", w))
         y2 = int(p.get("y2", h))
         fill = _parse_color(p.get("fill"), (0, 0, 0, 0))
-        outline = _parse_color(p.get("outline"), None)  # type: ignore[arg-type]
         stroke_width = int(p.get("stroke_width", 1))
         outline_color = _parse_color(p.get("outline"), (0, 0, 0, 255)) if p.get("outline") else None
         draw.rectangle([x1, y1, x2, y2], fill=fill if fill[3] > 0 else None,
@@ -261,8 +292,14 @@ def _apply_single_filter(img: Image.Image, name: str, params: dict[str, Any]) ->
         angle = float(params.get("angle", params.get("factor", 90)))
         return img.rotate(-angle, expand=False)
 
-    # Unknown filter: pass through silently
-    return img
+    known_filters = (
+        "blur", "gaussian_blur", "box_blur", "sharpen", "sharpness",
+        "edge_enhance", "brightness", "contrast", "saturation",
+        "grayscale", "sepia", "invert", "flip_h", "flip_v", "rotate",
+    )
+    raise RenderError(
+        f"Unknown filter {name!r}. Available filters: {', '.join(sorted(known_filters))}"
+    )
 
 
 # ---------------------------------------------------------------------------

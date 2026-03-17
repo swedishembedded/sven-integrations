@@ -96,7 +96,7 @@ class DrawioBackend:
         try:
             doc = parse_diagram(xml_str)
             return len(doc.pages) >= 0
-        except (ValueError, Exception):
+        except Exception:
             return False
 
     def get_diagram_info(self, path: str | Path) -> dict[str, Any]:

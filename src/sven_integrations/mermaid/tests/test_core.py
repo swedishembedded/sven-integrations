@@ -2,18 +2,16 @@
 
 from __future__ import annotations
 
-
 from sven_integrations.mermaid.core.diagrams import (
+    build_class_diagram,
+    build_er_diagram,
     build_flowchart,
     build_gantt,
     build_pie,
     build_sequence,
     build_state_diagram,
-    build_class_diagram,
-    build_er_diagram,
 )
 from sven_integrations.mermaid.project import MermaidDiagram, MermaidProject
-
 
 # ---------------------------------------------------------------------------
 # MermaidDiagram model

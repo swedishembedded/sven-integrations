@@ -13,7 +13,6 @@ from typing import Any
 
 from ..project import InkscapeProject, SvgElement
 
-
 # ---------------------------------------------------------------------------
 # Internal helpers
 

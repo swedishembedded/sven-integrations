@@ -37,7 +37,9 @@ class KdenliveBackend:
     def connect_dbus(self) -> bool:
         """Attempt to connect to a running Kdenlive over DBus.
 
-        Returns True when a live connection is established.
+        Returns True when a live connection is established.  Returns False
+        (without raising) when DBus or Kdenlive is unavailable — the backend
+        will fall back to XML-based operations for supported commands.
         """
         try:
             import dbus  # type: ignore[import]
@@ -47,7 +49,19 @@ class KdenliveBackend:
             self._iface = dbus.Interface(obj, self._DBUS_IFACE)
             self._dbus_available = True
             return True
-        except Exception:
+        except ImportError:
+            # python-dbus not installed — silently fall back to XML mode
+            self._dbus_available = False
+            return False
+        except Exception as exc:
+            # Kdenlive not running or DBus session unavailable
+            import warnings
+            warnings.warn(
+                f"Kdenlive DBus connection failed ({exc}); "
+                "falling back to XML-only mode. "
+                "Start Kdenlive first for live editing features.",
+                stacklevel=2,
+            )
             self._dbus_available = False
             return False
 
@@ -114,8 +128,11 @@ class KdenliveBackend:
             result = subprocess.run(cmd, capture_output=True, text=True, timeout=3600)
             if result.returncode != 0:
                 raise KdenliveError(f"melt render failed: {result.stderr.strip()}")
-        except FileNotFoundError:
-            raise KdenliveError("melt binary not found; install MLT framework")
+        except FileNotFoundError as exc:
+            raise KdenliveError(
+                "melt binary not found. Install the MLT framework: "
+                "apt-get install melt  (Debian/Ubuntu) or  brew install mlt  (macOS)"
+            ) from exc
         return output_path
 
     def get_project_info(self) -> dict[str, Any]:

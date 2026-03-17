@@ -25,28 +25,27 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
-from sven_integrations.inkscape.project import InkscapeProject, SvgElement
-from sven_integrations.inkscape.session import InkscapeSession
 from sven_integrations.inkscape.backend import InkscapeBackend, InkscapeError
-from sven_integrations.inkscape.core import elements as elem_ops
-from sven_integrations.inkscape.core import text as text_ops
-from sven_integrations.inkscape.core.export import (
-    build_actions,
-    export_png,
-    export_pdf,
-    export_eps,
-    export_emf,
-    export_area,
-    ExportError,
-)
 from sven_integrations.inkscape.core import document as doc_ops
-from sven_integrations.inkscape.core import shapes as shape_ops
-from sven_integrations.inkscape.core import styles as style_ops
-from sven_integrations.inkscape.core import transforms as transform_ops
+from sven_integrations.inkscape.core import elements as elem_ops
+from sven_integrations.inkscape.core import gradients as gradient_ops
 from sven_integrations.inkscape.core import layers as layer_ops
 from sven_integrations.inkscape.core import paths as path_ops
-from sven_integrations.inkscape.core import gradients as gradient_ops
-
+from sven_integrations.inkscape.core import shapes as shape_ops
+from sven_integrations.inkscape.core import styles as style_ops
+from sven_integrations.inkscape.core import text as text_ops
+from sven_integrations.inkscape.core import transforms as transform_ops
+from sven_integrations.inkscape.core.export import (
+    ExportError,
+    build_actions,
+    export_area,
+    export_emf,
+    export_eps,
+    export_pdf,
+    export_png,
+)
+from sven_integrations.inkscape.project import InkscapeProject, SvgElement
+from sven_integrations.inkscape.session import InkscapeSession
 
 # ---------------------------------------------------------------------------
 # Fixtures

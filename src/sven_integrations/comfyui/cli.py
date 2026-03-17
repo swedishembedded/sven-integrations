@@ -25,7 +25,6 @@ from .core.workflow import (
 from .project import ComfyProject
 from .session import ComfySession
 
-
 # ---------------------------------------------------------------------------
 # Context helpers
 # ---------------------------------------------------------------------------
@@ -57,15 +56,23 @@ def _get_backend(project: ComfyProject) -> ComfyBackend:
 
 @click.group("comfyui")
 @click.option("--session", "-s", default="default", help="Session name.")
+@click.option(
+    "--project", "-p", "project_path", default=None,
+    help="Load/save project state from this JSON file (idempotent; preferred for agents).",
+)
 @click.option("--json", "use_json", is_flag=True, default=False, help="JSON output.")
 @click.pass_context
-def comfyui_cli(ctx: click.Context, session: str, use_json: bool) -> None:
+def comfyui_cli(ctx: click.Context, session: str, project_path: str | None, use_json: bool) -> None:
     """ComfyUI image generation harness for AI agents."""
     ctx.ensure_object(dict)
     ctx.obj["session"] = session
     ctx.obj["json"] = use_json
     from ..shared.output import set_json_mode
     set_json_mode(use_json)
+    if project_path is not None:
+        sess = _get_session(ctx)
+        sess.set_project_file(project_path)
+        sess.save()
 
 
 # ---------------------------------------------------------------------------
@@ -104,7 +111,7 @@ def cmd_connect(ctx: click.Context, url: str) -> None:
 @click.option("--steps", default=20, type=int)
 @click.option("--cfg", default=7.0, type=float)
 @click.option("--seed", default=None, type=int)
-@click.option("--output-dir", "output_dir", default=".", help="Output directory.")
+@click.option("--output-dir", "output_dir", required=True, help="Absolute output directory (e.g. /tmp/comfy-out).")
 @click.pass_context
 def cmd_generate(
     ctx: click.Context,
@@ -156,7 +163,7 @@ def cmd_generate(
 @click.option("--negative", default="")
 @click.option("--model", default="v1-5-pruned-emaonly.safetensors")
 @click.option("--denoise", default=0.75, type=float)
-@click.option("--output-dir", "output_dir", default=".")
+@click.option("--output-dir", "output_dir", required=True, help="Absolute output directory (e.g. /tmp/comfy-out).")
 @click.pass_context
 def cmd_img2img(
     ctx: click.Context,
@@ -200,7 +207,7 @@ def cmd_img2img(
 @click.option("--image", required=True, type=click.Path())
 @click.option("--model", default="RealESRGAN_x4plus.pth")
 @click.option("--scale", default=4.0, type=float)
-@click.option("--output-dir", "output_dir", default=".")
+@click.option("--output-dir", "output_dir", required=True, help="Absolute output directory (e.g. /tmp/comfy-out).")
 @click.pass_context
 def cmd_upscale(
     ctx: click.Context,
@@ -513,7 +520,7 @@ def images_list(ctx: click.Context, prompt_id: str) -> None:
 
 @images_group.command("download")
 @click.argument("prompt_id")
-@click.option("--output-dir", "output_dir", default=".", help="Directory to save images.")
+@click.option("--output-dir", "output_dir", required=True, help="Absolute directory to save images (e.g. /tmp/comfy-out).")
 @click.option("--overwrite", is_flag=True, default=False, help="Overwrite existing files.")
 @click.pass_context
 def images_download(

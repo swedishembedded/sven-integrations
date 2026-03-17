@@ -11,7 +11,6 @@ from typing import Any
 
 from ..project import BlenderProject
 
-
 # ---------------------------------------------------------------------------
 # Internal data model
 
@@ -171,11 +170,11 @@ def build_animation_script(project: BlenderProject) -> list[str]:
             f"bpy.context.scene.frame_set({frame})",
             f"_anim_obj.{prop} = {value!r}",
             f"_anim_obj.keyframe_insert(data_path={prop!r}, frame={frame})",
-            f"_anim_action = _anim_obj.animation_data.action if _anim_obj.animation_data else None",
-            f"if _anim_action:",
-            f"    for _fc in _anim_action.fcurves:",
+            "_anim_action = _anim_obj.animation_data.action if _anim_obj.animation_data else None",
+            "if _anim_action:",
+            "    for _fc in _anim_action.fcurves:",
             f"        if _fc.data_path == {prop!r}:",
-            f"            for _kp in _fc.keyframe_points:",
+            "            for _kp in _fc.keyframe_points:",
             f"                if abs(_kp.co[0] - {frame}) < 0.5:",
             f"                    _kp.interpolation = {interp!r}",
         ]

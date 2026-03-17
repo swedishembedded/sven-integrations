@@ -11,9 +11,8 @@ from __future__ import annotations
 import cmd
 import os
 import shlex
-import traceback
 from pathlib import Path
-from typing import Any, Callable
+from typing import Any
 
 
 class Style:

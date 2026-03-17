@@ -93,7 +93,7 @@ def add_camera(
     loc = f"({location[0]}, {location[1]}, {location[2]})"
     stmts = _preamble() + [
         "cam_data = bpy.data.cameras.new(name='Camera')",
-        f"cam_obj = bpy.data.objects.new('Camera', cam_data)",
+        "cam_obj = bpy.data.objects.new('Camera', cam_data)",
         f"cam_obj.location = {loc}",
         "bpy.context.collection.objects.link(cam_obj)",
         "bpy.context.scene.camera = cam_obj",

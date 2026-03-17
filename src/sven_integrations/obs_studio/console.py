@@ -4,10 +4,10 @@ from __future__ import annotations
 
 from ..shared import Console, Style
 from .backend import ObsBackend, ObsConnectionError, ObsRequestError
-from .session import ObsSession
-from .core import scenes as scene_mod
 from .core import recording as rec_mod
+from .core import scenes as scene_mod
 from .core import sources as src_mod
+from .session import ObsSession
 
 
 class ObsConsole(Console):

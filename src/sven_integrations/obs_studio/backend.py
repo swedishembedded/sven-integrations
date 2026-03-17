@@ -5,9 +5,9 @@ from __future__ import annotations
 import base64
 import hashlib
 import json
+import os
 import socket
 import threading
-import time
 import uuid
 from typing import Any
 
@@ -29,8 +29,12 @@ class ObsBackend:
     """
 
     _WS_MAGIC = "258EAFA5-E914-47DA-95CA-C5AB0DC85B11"
-    _OPCODE_TEXT = 0x81
+    _FIN_TEXT = 0x81    # FIN bit + text opcode
     _OPCODE_CLOSE = 0x88
+    _OPCODE_PING = 0x89
+    _OPCODE_PONG = 0x8A
+    _RECV_TIMEOUT = 30.0
+    _CONNECT_TIMEOUT = 10.0
 
     def __init__(self) -> None:
         self._sock: socket.socket | None = None
@@ -52,10 +56,13 @@ class ObsBackend:
         self._host = host
         self._port = port
         try:
-            self._sock = socket.create_connection((host, port), timeout=10)
+            self._sock = socket.create_connection((host, port), timeout=self._CONNECT_TIMEOUT)
+            self._sock.settimeout(self._RECV_TIMEOUT)
         except OSError as exc:
             raise ObsConnectionError(
-                f"Cannot connect to OBS WebSocket at {host}:{port}: {exc}"
+                f"Cannot connect to OBS WebSocket at {host}:{port}: {exc}\n"
+                "Ensure OBS is running with obs-websocket enabled "
+                "(Tools → WebSocket Server Settings → Enable)."
             ) from exc
 
         self._ws_handshake(host, port)
@@ -174,40 +181,73 @@ class ObsBackend:
         self._sock.sendall(data)
 
     def _send_message(self, payload: dict[str, Any]) -> None:
+        """Send a masked WebSocket text frame (RFC 6455 §5.3 — client frames MUST be masked)."""
         text = json.dumps(payload)
         data = text.encode("utf-8")
         length = len(data)
+        mask_key = os.urandom(4)
+        masked = bytes(b ^ mask_key[i % 4] for i, b in enumerate(data))
         header = bytearray()
-        header.append(self._OPCODE_TEXT)
+        header.append(self._FIN_TEXT)
+        mask_bit = 0x80  # MASK bit required for client frames
         if length <= 125:
-            header.append(length)
+            header.append(mask_bit | length)
         elif length <= 65535:
-            header.append(126)
+            header.append(mask_bit | 126)
             header += length.to_bytes(2, "big")
         else:
-            header.append(127)
+            header.append(mask_bit | 127)
             header += length.to_bytes(8, "big")
-        self._send_raw(bytes(header) + data)
+        header += mask_key
+        self._send_raw(bytes(header) + masked)
 
     def _recv_message(self) -> dict[str, Any]:
+        """Receive a WebSocket frame and return the decoded JSON payload.
+
+        Handles ping frames automatically (replies with pong) and skips
+        continuation frames transparently.
+        """
         assert self._sock is not None
-        header = self._recv_exact(2)
-        opcode = header[0] & 0x0F
-        payload_len = header[1] & 0x7F
-        if payload_len == 126:
-            payload_len = int.from_bytes(self._recv_exact(2), "big")
-        elif payload_len == 127:
-            payload_len = int.from_bytes(self._recv_exact(8), "big")
-        body = self._recv_exact(payload_len)
-        return json.loads(body.decode("utf-8"))
+        while True:
+            try:
+                header = self._recv_exact(2)
+            except socket.timeout as exc:
+                raise ObsConnectionError(
+                    f"Timed out waiting for OBS response after {self._RECV_TIMEOUT:.0f}s"
+                ) from exc
+            opcode = header[0] & 0x0F
+            is_masked = bool(header[1] & 0x80)
+            payload_len = header[1] & 0x7F
+            if payload_len == 126:
+                payload_len = int.from_bytes(self._recv_exact(2), "big")
+            elif payload_len == 127:
+                payload_len = int.from_bytes(self._recv_exact(8), "big")
+            mask_key = self._recv_exact(4) if is_masked else b""
+            body = self._recv_exact(payload_len)
+            if is_masked:
+                body = bytes(b ^ mask_key[i % 4] for i, b in enumerate(body))
+            if opcode == 0x9:  # Ping — reply with Pong
+                self._send_raw(bytes([0x8A, len(body)]) + body)
+                continue
+            if opcode in (0x8, 0xA):  # Close or Pong — ignore
+                continue
+            return json.loads(body.decode("utf-8"))
 
     def _recv_exact(self, n: int) -> bytes:
         assert self._sock is not None
         buf = b""
         while len(buf) < n:
-            chunk = self._sock.recv(n - len(buf))
+            try:
+                chunk = self._sock.recv(n - len(buf))
+            except socket.timeout as exc:
+                raise ObsConnectionError(
+                    f"Timed out reading from OBS WebSocket after {self._RECV_TIMEOUT:.0f}s"
+                ) from exc
             if not chunk:
-                raise ObsConnectionError("Connection closed unexpectedly")
+                raise ObsConnectionError(
+                    "OBS WebSocket connection closed unexpectedly — "
+                    "OBS may have crashed or been closed."
+                )
             buf += chunk
         return buf
 

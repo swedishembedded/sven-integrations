@@ -11,16 +11,14 @@ import json as _json
 
 import click
 
-from ..shared import emit, emit_error, emit_json, emit_result, OutputFormatter
+from ..shared import OutputFormatter, emit, emit_error, emit_result
 from ..shared.output import set_json_mode
 from .core import animation as anim_ops
 from .core import lighting as light_ops
 from .core import materials as mat_ops
 from .core import modifiers as mod_ops
 from .core import objects as obj_ops
-from .core import render as render_ops
-from .core import scene as scene_ops
-from .project import BlenderProject, SceneObject
+from .project import BlenderProject
 from .session import BlenderSession
 
 # ---------------------------------------------------------------------------
@@ -35,6 +33,10 @@ from .session import BlenderSession
     help="Session name (workspace identifier).",
 )
 @click.option(
+    "--project", "-p", "project_path", default=None,
+    help="Load/save project state from this JSON file (idempotent; preferred for agents).",
+)
+@click.option(
     "--json",
     "use_json",
     is_flag=True,
@@ -42,12 +44,18 @@ from .session import BlenderSession
     help="Emit structured JSON output.",
 )
 @click.pass_context
-def blender_cli(ctx: click.Context, session: str, use_json: bool) -> None:
+def blender_cli(
+    ctx: click.Context, session: str, project_path: str | None, use_json: bool
+) -> None:
     """Control Blender from the command line."""
     set_json_mode(use_json)
     ctx.ensure_object(dict)
     ctx.obj["session_name"] = session
     ctx.obj["use_json"] = use_json
+    if project_path is not None:
+        sess = BlenderSession.open_or_create(session)
+        sess.set_project_file(project_path)
+        sess.save()
 
 
 # ---------------------------------------------------------------------------
@@ -69,7 +77,7 @@ def cmd_open(ctx: click.Context, path: str) -> None:
 
 @blender_cli.command("render")
 @click.option("--frame", type=int, default=None, help="Frame number to render.")
-@click.option("--output", "-o", default="/tmp/render", help="Output file path.")
+@click.option("--output", "-o", required=True, help="Absolute output file path (e.g. /tmp/render.png).")
 @click.pass_context
 def cmd_render(ctx: click.Context, frame: int | None, output: str) -> None:
     """Render the scene (or a specific frame)."""
@@ -185,7 +193,7 @@ def material_group() -> None:
 @click.option("--color", nargs=4, type=float, default=(0.8, 0.8, 0.8, 1.0), metavar="R G B A")
 def material_create(name: str, color: tuple[float, float, float, float]) -> None:
     """Create a new Principled BSDF material."""
-    result = mat_ops.create_material(name, color)
+    mat_ops.create_material(name, color)
     emit_result(
         f"Material '{name}' script ready.",
         {"ok": True, "name": name, "color": list(color)},
@@ -197,7 +205,7 @@ def material_create(name: str, color: tuple[float, float, float, float]) -> None
 @click.argument("material_name")
 def material_assign(object_name: str, material_name: str) -> None:
     """Assign a material to an object."""
-    result = mat_ops.assign_material(object_name, material_name)
+    mat_ops.assign_material(object_name, material_name)
     emit_result(
         f"Assign '{material_name}' → '{object_name}' script ready.",
         {"ok": True, "object": object_name, "material": material_name},
@@ -221,6 +229,28 @@ def material_list() -> None:
 @blender_cli.group("scene")
 def scene_group() -> None:
     """Scene management commands."""
+
+
+@scene_group.command("new")
+@click.option("--name", default="Scene", show_default=True, help="Scene name.")
+@click.option("--output", "-o", "output_path", default=None, help="Write project JSON to this file.")
+@click.pass_context
+def scene_new(ctx: click.Context, name: str, output_path: str | None) -> None:
+    """Create a new empty Blender scene project in the session."""
+    sess = BlenderSession.open_or_create(ctx.obj["session_name"])
+    proj = BlenderProject(scene_name=name)
+    sess.project = proj
+    sess.save()
+    if output_path is not None:
+        import json as _json_mod
+        from pathlib import Path
+        p = Path(output_path)
+        p.parent.mkdir(parents=True, exist_ok=True)
+        p.write_text(_json_mod.dumps(proj.to_dict(), indent=2), encoding="utf-8")
+    emit_result(
+        f"Blender scene {name!r} created.",
+        {"ok": True, "scene_name": name},
+    )
 
 
 @scene_group.command("info")

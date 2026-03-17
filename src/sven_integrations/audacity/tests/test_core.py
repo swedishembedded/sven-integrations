@@ -2,24 +2,22 @@
 
 from __future__ import annotations
 
-import uuid
-from unittest.mock import MagicMock, patch
+from unittest.mock import MagicMock
 
 import pytest
 
-from sven_integrations.audacity.project import AudioClip, AudioProject, AudioTrack
 from sven_integrations.audacity.backend import AudacityBackend, AudacityConnectionError
-from sven_integrations.audacity.core import tracks as track_mod
-from sven_integrations.audacity.core import selection as sel_mod
-from sven_integrations.audacity.core import effects as fx_mod
-from sven_integrations.audacity.core.export import build_export_command, export_wav, export_mp3
 from sven_integrations.audacity.core import clips as clip_mod
+from sven_integrations.audacity.core import effects as fx_mod
 from sven_integrations.audacity.core import labels as label_mod
 from sven_integrations.audacity.core import media as media_mod
+from sven_integrations.audacity.core import selection as sel_mod
+from sven_integrations.audacity.core import tracks as track_mod
 from sven_integrations.audacity.core.clips import ClipInfo
+from sven_integrations.audacity.core.export import build_export_command, export_mp3, export_wav
 from sven_integrations.audacity.core.labels import LabelMark
 from sven_integrations.audacity.core.media import MediaInfo, format_duration, format_file_size
-
+from sven_integrations.audacity.project import AudioClip, AudioProject, AudioTrack
 
 # ---------------------------------------------------------------------------
 # AudioClip tests

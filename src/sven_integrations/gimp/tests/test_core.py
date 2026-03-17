@@ -17,21 +17,20 @@ from pathlib import Path
 
 import pytest
 
-from sven_integrations.gimp.project import GimpProject, LayerInfo
-from sven_integrations.gimp.session import GimpSession
-from sven_integrations.gimp.core import layers as layer_ops
-from sven_integrations.gimp.core import filters as filter_ops
 from sven_integrations.gimp.core import canvas as canvas_ops
+from sven_integrations.gimp.core import filters as filter_ops
+from sven_integrations.gimp.core import layers as layer_ops
 from sven_integrations.gimp.core.export import (
+    ExportError,
     build_export_cmd,
-    export_png,
     export_jpeg,
+    export_pdf,
+    export_png,
     export_tiff,
     export_webp,
-    export_pdf,
-    ExportError,
 )
-
+from sven_integrations.gimp.project import GimpProject, LayerInfo
+from sven_integrations.gimp.session import GimpSession
 
 # ---------------------------------------------------------------------------
 # Fixtures

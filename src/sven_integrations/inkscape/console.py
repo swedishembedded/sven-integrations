@@ -2,8 +2,8 @@
 
 from __future__ import annotations
 
-from ..shared import Console, Style
-from .backend import InkscapeBackend, InkscapeError
+from ..shared import Console
+from .backend import InkscapeBackend
 from .core import elements as elem_ops
 from .core import export as export_ops
 from .core import text as text_ops
@@ -65,13 +65,13 @@ class InkscapeConsole(Console):
                 if len(parts) < 4:
                     self.failure("Usage: element move <id> <dx> <dy>")
                     return
-                result = elem_ops.move_element(parts[1], float(parts[2]), float(parts[3]))
+                elem_ops.move_element(parts[1], float(parts[2]), float(parts[3]))
                 self.success(f"Move '{parts[1]}' by ({parts[2]}, {parts[3]}) — actions built.")
             elif sub == "scale":
                 if len(parts) < 4:
                     self.failure("Usage: element scale <id> <sx> <sy>")
                     return
-                result = elem_ops.scale_element(parts[1], float(parts[2]), float(parts[3]))
+                elem_ops.scale_element(parts[1], float(parts[2]), float(parts[3]))
                 self.success(f"Scale '{parts[1]}' ({parts[2]}×{parts[3]}) — actions built.")
             elif sub == "rotate":
                 if len(parts) < 3:
@@ -80,32 +80,32 @@ class InkscapeConsole(Console):
                 angle = float(parts[2])
                 cx = float(parts[3]) if len(parts) > 3 else 0.0
                 cy = float(parts[4]) if len(parts) > 4 else 0.0
-                result = elem_ops.rotate_element(parts[1], angle, cx, cy)
+                elem_ops.rotate_element(parts[1], angle, cx, cy)
                 self.success(f"Rotate '{parts[1]}' by {angle}° — actions built.")
             elif sub == "fill":
                 if len(parts) < 3:
                     self.failure("Usage: element fill <id> <color>")
                     return
-                result = elem_ops.set_fill(parts[1], parts[2])
+                elem_ops.set_fill(parts[1], parts[2])
                 self.success(f"Fill '{parts[1]}' → {parts[2]}")
             elif sub == "stroke":
                 if len(parts) < 3:
                     self.failure("Usage: element stroke <id> <color> [width]")
                     return
                 width = float(parts[3]) if len(parts) > 3 else 1.0
-                result = elem_ops.set_stroke(parts[1], parts[2], width)
+                elem_ops.set_stroke(parts[1], parts[2], width)
                 self.success(f"Stroke '{parts[1]}' → {parts[2]} w={width}")
             elif sub == "delete":
                 if len(parts) < 2:
                     self.failure("Usage: element delete <id>")
                     return
-                result = elem_ops.delete_element(parts[1])
+                elem_ops.delete_element(parts[1])
                 self.success(f"Delete '{parts[1]}' — actions built.")
             elif sub == "duplicate":
                 if len(parts) < 2:
                     self.failure("Usage: element duplicate <id>")
                     return
-                result = elem_ops.duplicate_element(parts[1])
+                elem_ops.duplicate_element(parts[1])
                 self.success(f"Duplicate '{parts[1]}' — actions built.")
             elif sub == "group":
                 ids = [p for p in parts[1:] if not p.startswith("--")]
@@ -117,7 +117,7 @@ class InkscapeConsole(Console):
                 if not ids:
                     self.failure("Provide at least one element id.")
                     return
-                result = elem_ops.group_elements(ids, gid)
+                elem_ops.group_elements(ids, gid)
                 self.success(f"Group {ids} as '#{gid}' — actions built.")
             else:
                 self.failure(f"Unknown element subcommand: {sub!r}")
@@ -149,27 +149,27 @@ class InkscapeConsole(Console):
                     return
                 x, y = float(parts[1]), float(parts[2])
                 content = " ".join(parts[3:])
-                result = text_ops.add_text(x, y, content)
+                text_ops.add_text(x, y, content)
                 self.success(f"Text '{content[:30]}' at ({x},{y}) — actions built.")
             elif sub == "edit":
                 if len(parts) < 3:
                     self.failure("Usage: text edit <id> <new_content>")
                     return
                 content = " ".join(parts[2:])
-                result = text_ops.edit_text(parts[1], content)
+                text_ops.edit_text(parts[1], content)
                 self.success(f"Edit text '{parts[1]}' — actions built.")
             elif sub == "font":
                 if len(parts) < 4:
                     self.failure("Usage: text font <id> <family> <size> [weight]")
                     return
                 weight = parts[4] if len(parts) > 4 else "normal"
-                result = text_ops.set_font(parts[1], parts[2], float(parts[3]), weight)
+                text_ops.set_font(parts[1], parts[2], float(parts[3]), weight)
                 self.success(f"Font on '{parts[1]}' → {parts[2]} {parts[3]}px {weight}")
             elif sub == "to-path":
                 if len(parts) < 2:
                     self.failure("Usage: text to-path <id>")
                     return
-                result = text_ops.convert_text_to_path(parts[1])
+                text_ops.convert_text_to_path(parts[1])
                 self.success(f"Convert '{parts[1]}' to path — actions built.")
             else:
                 self.failure(f"Unknown text subcommand: {sub!r}")

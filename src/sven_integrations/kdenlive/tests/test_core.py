@@ -4,11 +4,11 @@ from __future__ import annotations
 
 import pytest
 
+from sven_integrations.kdenlive.core import bin as bin_mod
 from sven_integrations.kdenlive.core import effects as eff_mod
+from sven_integrations.kdenlive.core import guides as guide_mod
 from sven_integrations.kdenlive.core import render as render_mod
 from sven_integrations.kdenlive.core import timeline as tl_mod
-from sven_integrations.kdenlive.core import bin as bin_mod
-from sven_integrations.kdenlive.core import guides as guide_mod
 from sven_integrations.kdenlive.core import transitions as kd_trans_mod
 from sven_integrations.kdenlive.project import (
     KdenliveProject,

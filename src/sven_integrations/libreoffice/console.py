@@ -4,10 +4,10 @@ from __future__ import annotations
 
 from ..shared import Console, Style
 from .backend import LibreOfficeBackend, LibreOfficeError
-from .session import LibreOfficeSession
-from .core import writer as writer_mod
 from .core import calc as calc_mod
 from .core import impress as impress_mod
+from .core import writer as writer_mod
+from .session import LibreOfficeSession
 
 
 class LibreOfficeConsole(Console):
@@ -90,7 +90,7 @@ class LibreOfficeConsole(Console):
                 doc_model = self._load_writer()
                 writer_mod.append_paragraph(doc_model, text)
                 self._store_writer(doc_model)
-                self.success(f"Paragraph appended")
+                self.success("Paragraph appended")
             elif sub == "wordcount":
                 doc_model = self._load_writer()
                 count = writer_mod.get_word_count(doc_model)

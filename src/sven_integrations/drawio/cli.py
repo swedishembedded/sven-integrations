@@ -19,7 +19,6 @@ from .drawio_xml import (
 from .project import DrawioDocument
 from .session import DrawioSession
 
-
 # ---------------------------------------------------------------------------
 # Shared context helpers
 # ---------------------------------------------------------------------------
@@ -49,15 +48,57 @@ def _save_doc(session: DrawioSession, doc: DrawioDocument) -> None:
 
 @click.group("drawio")
 @click.option("--session", "-s", default="default", help="Session name.")
+@click.option(
+    "--project", "-p", "project_path", default=None,
+    help="Load/save project state from this JSON file (idempotent; preferred for agents).",
+)
 @click.option("--json", "use_json", is_flag=True, default=False, help="Emit JSON output.")
 @click.pass_context
-def drawio_cli(ctx: click.Context, session: str, use_json: bool) -> None:
+def drawio_cli(ctx: click.Context, session: str, project_path: str | None, use_json: bool) -> None:
     """Draw.io diagram control harness for AI agents."""
     ctx.ensure_object(dict)
     ctx.obj["session"] = session
     ctx.obj["json"] = use_json
     from ..shared.output import set_json_mode
     set_json_mode(use_json)
+    if project_path is not None:
+        sess = DrawioSession.open_or_create(session)
+        sess.set_project_file(project_path)
+        sess.save()
+
+
+# ---------------------------------------------------------------------------
+# project group
+# ---------------------------------------------------------------------------
+
+
+@drawio_cli.group("project")
+def project_group() -> None:
+    """Project-level management commands."""
+
+
+@project_group.command("new")
+@click.option("--name", default="Untitled", show_default=True, help="Document name.")
+@click.option("--page-name", "page_name", default="Page-1", show_default=True, help="First page name.")
+@click.option("--output", "-o", "output_path", default=None, help="Write document to this file.")
+@click.pass_context
+def project_new(ctx: click.Context, name: str, page_name: str, output_path: str | None) -> None:
+    """Create a new empty draw.io document."""
+    from pathlib import Path
+    session = _get_session(ctx)
+    doc = DrawioDocument()
+    doc.add_page(page_name)
+    session.data["name"] = name
+    _save_doc(session, doc)
+    if output_path is not None:
+        p = Path(output_path)
+        p.parent.mkdir(parents=True, exist_ok=True)
+        from .drawio_xml import render_xml
+        p.write_text(render_xml(doc), encoding="utf-8")
+    emit_result(
+        f"Created document {name!r} with page {page_name!r}",
+        {"ok": True, "status": "created", "name": name, "page": page_name},
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -95,15 +136,15 @@ def cmd_open(ctx: click.Context, path: str) -> None:
     content = Path(path).read_text(encoding="utf-8")
     try:
         doc = parse_diagram(content)
+        doc.file_path = path
+        session = _get_session(ctx)
+        _save_doc(session, doc)
+        emit_result(
+            f"Opened {path!r} ({len(doc.pages)} pages)",
+            {"status": "opened", "path": path, "pages": len(doc.pages)},
+        )
     except ValueError as exc:
         emit_error(str(exc))
-    doc.file_path = path
-    session = _get_session(ctx)
-    _save_doc(session, doc)
-    emit_result(
-        f"Opened {path!r} ({len(doc.pages)} pages)",
-        {"status": "opened", "path": path, "pages": len(doc.pages)},
-    )
 
 
 # ---------------------------------------------------------------------------
@@ -116,17 +157,16 @@ def cmd_open(ctx: click.Context, path: str) -> None:
     "--format", "fmt", type=click.Choice(["png", "pdf", "svg", "jpg"]), default="png"
 )
 @click.option("--page", "page_index", default=0, help="Page index to export.")
-@click.option("--output", "-o", default=None, help="Output file path.")
+@click.option("--output", "-o", required=True, help="Output file path (absolute path required).")
 @click.pass_context
-def cmd_export(ctx: click.Context, fmt: str, page_index: int, output: str | None) -> None:
+def cmd_export(ctx: click.Context, fmt: str, page_index: int, output: str) -> None:
     """Export the current document to an image or PDF."""
     session = _get_session(ctx)
     doc = _load_doc(session)
-    out_path = output or f"diagram.{fmt}"
     be = DrawioBackend()
     xml = render_xml(doc)
     try:
-        result_path = be.convert_xml(xml, out_path, fmt=fmt)
+        result_path = be.convert_xml(xml, output, fmt=fmt)
         emit_result(
             f"Exported to {result_path}",
             {"status": "exported", "output": str(result_path), "format": fmt},
@@ -167,10 +207,11 @@ def shape_add(
     session = _get_session(ctx)
     doc = _load_doc(session)
     if not doc.pages:
-        emit_error("Document has no pages.")
-    cid = add_shape(doc, 0, shape_type, label, x, y, width, height)
-    _save_doc(session, doc)
-    emit_result(f"Shape added: {cid}", {"status": "added", "cell_id": cid, "type": shape_type})
+        emit_error("Document has no pages. Run 'new' or 'open' first.")
+    else:
+        cid = add_shape(doc, 0, shape_type, label, x, y, width, height)
+        _save_doc(session, doc)
+        emit_result(f"Shape added: {cid}", {"status": "added", "cell_id": cid, "type": shape_type})
 
 
 @shape_group.command("remove")

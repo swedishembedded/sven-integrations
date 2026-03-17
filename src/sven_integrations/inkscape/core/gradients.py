@@ -14,7 +14,6 @@ from typing import Any, Literal
 
 from ..project import InkscapeProject
 
-
 # ---------------------------------------------------------------------------
 # Dataclasses
 

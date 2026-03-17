@@ -21,7 +21,6 @@ from sven_integrations.drawio.project import (
     DrawioPage,
 )
 
-
 # ---------------------------------------------------------------------------
 # Model tests
 # ---------------------------------------------------------------------------
@@ -131,7 +130,7 @@ class TestNewDiagram:
 class TestParseRenderRoundtrip:
     def test_roundtrip_preserves_cells(self) -> None:
         doc = DrawioDocument()
-        pg = doc.add_page("Round")
+        doc.add_page("Round")
         cid = add_shape(doc, 0, "rectangle", "A", 10, 20, 100, 50)
         xml = render_xml(doc)
         assert cid in xml

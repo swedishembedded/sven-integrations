@@ -83,7 +83,6 @@ class ComfyConsole(Console):
         steps = 20
         cfg = 7.0
         seed = None
-        output_dir = "."
         it = iter(parts)
         for tok in it:
             if tok == "--positive":
@@ -103,7 +102,7 @@ class ComfyConsole(Console):
             elif tok == "--seed":
                 seed = int(next(it, "-1"))
             elif tok == "--output-dir":
-                output_dir = next(it, ".")
+                next(it, ".")  # output-dir accepted but handled by CLI, not console
         if not positive:
             print(Style.err("  Provide --positive PROMPT"))
             return

@@ -7,26 +7,24 @@ All commands share ``--session / -s`` and ``--json`` global options.
 
 from __future__ import annotations
 
-import sys
 from typing import Any
 
 import click
 
-from ..shared import emit, emit_error, emit_json, emit_result, OutputFormatter
+from ..shared import OutputFormatter, emit, emit_error, emit_result
 from ..shared.output import set_json_mode
+from .core import document as doc_ops
 from .core import elements as elem_ops
 from .core import export as export_ops
-from .core import text as text_ops
-from .core import document as doc_ops
-from .core import shapes as shape_ops
-from .core import styles as style_ops
-from .core import transforms as transform_ops
+from .core import gradients as gradient_ops
 from .core import layers as layer_ops
 from .core import paths as path_ops
-from .core import gradients as gradient_ops
-from .project import InkscapeProject, SvgElement
+from .core import shapes as shape_ops
+from .core import styles as style_ops
+from .core import text as text_ops
+from .core import transforms as transform_ops
+from .project import InkscapeProject
 from .session import InkscapeSession
-
 
 # ---------------------------------------------------------------------------
 # Shared helpers
@@ -40,8 +38,7 @@ def _require_project(ctx: click.Context) -> tuple[InkscapeSession, InkscapeProje
     sess = _get_session(ctx)
     proj = sess.project
     if proj is None:
-        emit_error("No project in session.  Use 'document new' or 'open' first.")
-        sys.exit(1)
+        emit_error("No project in session. Use 'document new' or 'open' first.")
     return sess, proj
 
 
@@ -62,6 +59,10 @@ def _save_project(sess: InkscapeSession, proj: InkscapeProject) -> None:
     help="Session name (workspace identifier).",
 )
 @click.option(
+    "--project", "-p", "project_path", default=None,
+    help="Load/save project state from this JSON file (idempotent; preferred for agents).",
+)
+@click.option(
     "--json",
     "use_json",
     is_flag=True,
@@ -69,12 +70,18 @@ def _save_project(sess: InkscapeSession, proj: InkscapeProject) -> None:
     help="Emit structured JSON output.",
 )
 @click.pass_context
-def inkscape_cli(ctx: click.Context, session: str, use_json: bool) -> None:
+def inkscape_cli(
+    ctx: click.Context, session: str, project_path: str | None, use_json: bool
+) -> None:
     """Control Inkscape from the command line."""
     set_json_mode(use_json)
     ctx.ensure_object(dict)
     ctx.obj["session_name"] = session
     ctx.obj["use_json"] = use_json
+    if project_path is not None:
+        sess = InkscapeSession.open_or_create(session)
+        sess.set_project_file(project_path)
+        sess.save()
 
 
 # ---------------------------------------------------------------------------

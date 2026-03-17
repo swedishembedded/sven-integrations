@@ -4,18 +4,17 @@ from __future__ import annotations
 
 import click
 
-from ..shared import emit, emit_result, emit_error, emit_json
+from ..shared import emit_error, emit_result
 from .backend import ObsBackend, ObsConnectionError, ObsRequestError
-from .session import ObsSession
-from .project import ObsSetup, ObsScene, ObsSource
-from .core import scenes as scene_mod
-from .core import recording as rec_mod
-from .core import sources as src_mod
 from .core import audio as audio_mod
 from .core import filters as filter_mod
 from .core import output as output_mod
+from .core import recording as rec_mod
+from .core import scenes as scene_mod
+from .core import sources as src_mod
 from .core import transitions as trans_mod
-
+from .project import ObsSetup
+from .session import ObsSession
 
 _backend = ObsBackend()
 
@@ -30,15 +29,53 @@ def _get_session(name: str) -> ObsSession:
 @click.group()
 @click.option("--session", "-s", "session_name", default="default",
               help="Session name for persisting state.")
+@click.option(
+    "--project", "-p", "project_path", default=None,
+    help="Load/save project state from this JSON file (idempotent; preferred for agents).",
+)
 @click.option("--json", "use_json", is_flag=True, default=False,
               help="Emit machine-readable JSON output.")
 @click.pass_context
-def obs_cli(ctx: click.Context, session_name: str, use_json: bool) -> None:
+def obs_cli(ctx: click.Context, session_name: str, project_path: str | None, use_json: bool) -> None:
     """OBS Studio integration — control OBS via obs-websocket."""
     from ..shared.output import set_json_mode
     set_json_mode(use_json)
     ctx.ensure_object(dict)
     ctx.obj["session_name"] = session_name
+    if project_path is not None:
+        sess = _get_session(session_name)
+        sess.set_project_file(project_path)
+        sess.save()
+
+
+# ---------------------------------------------------------------------------
+# project group
+
+
+@obs_cli.group("project")
+def project_group() -> None:
+    """Project management commands."""
+
+
+@project_group.command("new")
+@click.option("--name", default="Untitled", show_default=True, help="Project name.")
+@click.option("--output", "-o", "output_path", default=None, help="Write project JSON to this file.")
+@click.pass_context
+def project_new(ctx: click.Context, name: str, output_path: str | None) -> None:
+    """Create a new empty OBS project in the session."""
+    import json as _json_mod
+    from pathlib import Path
+    sess = _get_session(ctx.obj.get("session_name", "default"))
+    sess.data["project_name"] = name
+    sess.save()
+    if output_path is not None:
+        p = Path(output_path)
+        p.parent.mkdir(parents=True, exist_ok=True)
+        p.write_text(_json_mod.dumps({"name": name, "scenes": [], "sources": []}, indent=2), encoding="utf-8")
+    emit_result(
+        f"OBS project {name!r} created.",
+        {"ok": True, "name": name},
+    )
 
 
 # ---------------------------------------------------------------------------
