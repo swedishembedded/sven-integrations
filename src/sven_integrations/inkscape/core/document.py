@@ -14,6 +14,9 @@ from ..project import InkscapeProject, SvgElement
 
 _SVG_NS = "http://www.w3.org/2000/svg"
 
+# Register namespace so ET produces clean prefixes (svg:*) instead of ns0:*
+ET.register_namespace("svg", _SVG_NS)
+
 
 @dataclass
 class DocumentProfile:
@@ -189,27 +192,36 @@ def save_svg(project: InkscapeProject, path: str) -> dict[str, Any]:
     are written as the SVG ``style`` attribute.
 
     Uses :mod:`xml.etree.ElementTree` — no third-party dependencies.
+    Produces valid SVG viewable in browsers and Inkscape.
     """
-    ET.register_namespace("", _SVG_NS)
-
     vb = project.viewbox
+    units = project.data.get("units", "mm")
+    w_str = f"{project.width_mm}{units}"
+    h_str = f"{project.height_mm}{units}"
+
     root = ET.Element(
         f"{{{_SVG_NS}}}svg",
         {
             "xmlns": _SVG_NS,
-            "width": f"{project.width_mm}mm",
-            "height": f"{project.height_mm}mm",
+            "width": w_str,
+            "height": h_str,
             "viewBox": f"{vb[0]} {vb[1]} {vb[2]} {vb[3]}",
             "version": "1.1",
         },
     )
 
     background = project.data.get("background", "white")
-    if background and background.lower() != "none":
+    if background and background.lower() not in ("none", "transparent"):
         ET.SubElement(
             root,
             f"{{{_SVG_NS}}}rect",
-            {"width": "100%", "height": "100%", "fill": background},
+            {
+                "x": str(vb[0]),
+                "y": str(vb[1]),
+                "width": str(vb[2] - vb[0]),
+                "height": str(vb[3] - vb[1]),
+                "fill": background,
+            },
         )
 
     for elem in project.elements:
@@ -231,15 +243,15 @@ def _append_svg_element(parent: ET.Element, elem: SvgElement) -> ET.Element:
     """Append a single SVG element node to *parent* and return it."""
     attrib: dict[str, str] = {}
 
-    # Shape-specific geometric attributes
+    # Shape-specific geometric attributes (exclude internal keys)
     for k, v in elem.attrs.items():
+        if k == "_text_content":
+            continue
         attrib[str(k)] = str(v)
 
-    # id / label
+    # id (omit inkscape:label to avoid xmlns; id is sufficient for reference)
     if elem.element_id:
         attrib["id"] = elem.element_id
-    if elem.label:
-        attrib["inkscape:label"] = elem.label
 
     # Build inline style: style string takes precedence; fall back to
     # separate fill/stroke fields when no style string is set.

@@ -27,7 +27,7 @@ dependencies = [
 [project.optional-dependencies]
 gimp        = ["Pillow>=10.0"]
 blender     = []
-inkscape    = []
+inkscape    = ["cairosvg>=2.7"]
 audacity    = []
 libreoffice = []
 obs_studio  = []

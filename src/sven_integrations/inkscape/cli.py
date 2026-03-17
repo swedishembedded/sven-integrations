@@ -118,27 +118,31 @@ def cmd_open(ctx: click.Context, path: str, width: float, height: float) -> None
 @click.option("--dpi", default=96.0, show_default=True, type=float, help="DPI for PNG export.")
 @click.pass_context
 def cmd_export(ctx: click.Context, out_path: str, fmt: str, dpi: float) -> None:
-    """Export the active SVG document."""
+    """Export the active SVG document. Invokes Inkscape to produce PNG/PDF/EPS/EMF."""
     sess, proj = _require_project(ctx)
     if proj.svg_path is None:
         emit_error("No SVG file path set.  Use 'open' or 'document save' first.")
         return
     svg = proj.svg_path
+    fmt_lower = fmt.lower()
+
+    if fmt_lower == "svg":
+        # SVG export = save current project to path
+        from .core import document as doc_ops
+        result = doc_ops.save_svg(proj, out_path)
+        proj.svg_path = out_path
+        _save_project(sess, proj)
+        emit_result(
+            f"Saved SVG → {out_path}",
+            {"ok": True, "format": "svg", "out_path": out_path, **result},
+        )
+        return
+
     try:
-        fn_map = {
-            "png": lambda: export_ops.export_png(svg, out_path, dpi=dpi),
-            "pdf": lambda: export_ops.export_pdf(svg, out_path),
-            "eps": lambda: export_ops.export_eps(svg, out_path),
-            "emf": lambda: export_ops.export_emf(svg, out_path),
-        }
-        handler = fn_map.get(fmt.lower())
-        if handler is None:
-            emit_error(f"Unknown format: {fmt!r}")
-            return
-        result = handler()
+        result = export_ops.run_export(svg, out_path, fmt_lower, dpi=dpi)
         emit_result(
             f"Export ({fmt.upper()}) → {out_path}",
-            {"ok": True, "format": fmt, "out_path": out_path, "actions": result["actions"]},
+            {"ok": True, "format": fmt_lower, "out_path": out_path, **result},
         )
     except export_ops.ExportError as exc:
         emit_error(str(exc))
