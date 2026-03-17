@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import uuid
 import xml.etree.ElementTree as ET
+from datetime import datetime, timezone
 
 from .project import CellGeometry, DrawioCell, DrawioDocument, DrawioPage
 
@@ -60,11 +61,15 @@ def _cell_to_element(cell: DrawioCell) -> ET.Element:
     if cell.target_id:
         el.set("target", cell.target_id)
     geo = ET.SubElement(el, "mxGeometry")
-    geo.set("x", str(cell.geometry.x))
-    geo.set("y", str(cell.geometry.y))
-    geo.set("width", str(cell.geometry.width))
-    geo.set("height", str(cell.geometry.height))
-    geo.set("as", "geometry")
+    if cell.edge:
+        geo.set("relative", "1")
+        geo.set("as", "geometry")
+    else:
+        geo.set("x", str(cell.geometry.x))
+        geo.set("y", str(cell.geometry.y))
+        geo.set("width", str(cell.geometry.width))
+        geo.set("height", str(cell.geometry.height))
+        geo.set("as", "geometry")
     return el
 
 
@@ -134,17 +139,20 @@ def parse_diagram(xml_str: str) -> DrawioDocument:
 
     doc = DrawioDocument()
 
-    # Handle two common layouts:
-    # 1. <mxGraphModel> wrapping <root> with <diagram> children (multi-page)
-    # 2. <mxGraphModel> with a single <root> (single page embedded)
-    if root.tag == "mxGraphModel":
+    # Handle layouts:
+    # 1. <mxfile> (standard) — diagram children, each with mxGraphModel > root
+    # 2. <mxGraphModel> (legacy) — diagram children or single root
+    if root.tag == "mxfile":
+        for diag in root.findall("diagram"):
+            page = _parse_diagram_element(diag)
+            doc.pages.append(page)
+    elif root.tag == "mxGraphModel":
         diagrams = root.findall("diagram")
         if diagrams:
             for diag in diagrams:
                 page = _parse_diagram_element(diag)
                 doc.pages.append(page)
         else:
-            # Single-page format: root IS the model
             page = _parse_root_element(root.find("root"), name="Page-1", page_id=str(uuid.uuid4()))
             doc.pages.append(page)
     else:
@@ -174,38 +182,54 @@ def _parse_root_element(
 
 
 def render_xml(diagram: DrawioDocument) -> str:
-    """Serialise a DrawioDocument back to drawio XML."""
-    mx = ET.Element("mxGraphModel")
-    mx.attrib.update(
+    """Serialise a DrawioDocument back to drawio XML.
+
+    Output uses the standard mxfile format: mxfile > diagram > mxGraphModel > root,
+    which Draw.io expects. The previous mxGraphModel root format caused empty diagrams.
+    """
+    model_attrs = {
+        "dx": "1422",
+        "dy": "762",
+        "grid": "1",
+        "gridSize": "10",
+        "guides": "1",
+        "tooltips": "1",
+        "connect": "1",
+        "arrows": "1",
+        "fold": "1",
+        "page": "1",
+        "pageScale": "1",
+        "pageWidth": "1169",
+        "pageHeight": "827",
+        "math": "0",
+        "shadow": "0",
+    }
+    modified = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%S.000Z")
+    mxfile = ET.Element("mxfile")
+    mxfile.attrib.update(
         {
-            "dx": "1422",
-            "dy": "762",
-            "grid": "1",
-            "gridSize": "10",
-            "guides": "1",
-            "tooltips": "1",
-            "connect": "1",
-            "arrows": "1",
-            "fold": "1",
-            "page": "1",
-            "pageScale": "1",
-            "pageWidth": "1169",
-            "pageHeight": "827",
-            "math": "0",
-            "shadow": "0",
+            "host": "sven-integrations",
+            "modified": modified,
+            "agent": "sven-integrations-drawio",
+            "etag": str(uuid.uuid4())[:8],
+            "version": "24.0.0",
+            "type": "device",
+            "compressed": "false",
+            "pages": str(len(diagram.pages)),
         }
     )
     for page in diagram.pages:
-        diag_el = ET.SubElement(mx, "diagram")
+        diag_el = ET.SubElement(mxfile, "diagram")
         diag_el.set("id", page.page_id)
         diag_el.set("name", page.name)
         model_el = ET.SubElement(diag_el, "mxGraphModel")
+        model_el.attrib.update(model_attrs)
         root_el = ET.SubElement(model_el, "root")
         _root_cells(root_el)
         for cell in page.cells:
             root_el.append(_cell_to_element(cell))
-    ET.indent(mx, space="  ")
-    return ET.tostring(mx, encoding="unicode", xml_declaration=False)
+    ET.indent(mxfile, space="  ")
+    return ET.tostring(mxfile, encoding="unicode", xml_declaration=False)
 
 
 def add_shape(

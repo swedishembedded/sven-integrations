@@ -127,6 +127,19 @@ class TestNewDiagram:
         assert doc.pages[0].name == "My Diagram"
 
 
+class TestRenderXml:
+    def test_outputs_mxfile_format(self) -> None:
+        """Saved files must use mxfile root so Draw.io can open them."""
+        doc = DrawioDocument()
+        doc.add_page("P")
+        add_shape(doc, 0, "rectangle", "A", 0, 0, 100, 60)
+        xml = render_xml(doc)
+        assert xml.strip().startswith("<mxfile ")
+        assert 'compressed="false"' in xml
+        assert "<diagram " in xml
+        assert "<mxGraphModel " in xml
+
+
 class TestParseRenderRoundtrip:
     def test_roundtrip_preserves_cells(self) -> None:
         doc = DrawioDocument()
