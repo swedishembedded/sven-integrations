@@ -20,9 +20,14 @@ class LayerInfo:
     visible: bool = True
     blend_mode: str = "normal"
     group: bool = False
+    source: str | None = None  # Path to image file for image layers
+    offset_x: int = 0
+    offset_y: int = 0
+    width: int | None = None
+    height: int | None = None
 
     def to_dict(self) -> dict[str, Any]:
-        return {
+        d: dict[str, Any] = {
             "id": self.id,
             "name": self.name,
             "opacity": self.opacity,
@@ -30,6 +35,16 @@ class LayerInfo:
             "blend_mode": self.blend_mode,
             "group": self.group,
         }
+        if self.source is not None:
+            d["source"] = self.source
+        if self.offset_x or self.offset_y:
+            d["offset_x"] = self.offset_x
+            d["offset_y"] = self.offset_y
+        if self.width is not None:
+            d["width"] = self.width
+        if self.height is not None:
+            d["height"] = self.height
+        return d
 
     @classmethod
     def from_dict(cls, data: dict[str, Any]) -> "LayerInfo":
@@ -40,6 +55,11 @@ class LayerInfo:
             visible=bool(data.get("visible", True)),
             blend_mode=str(data.get("blend_mode", "normal")),
             group=bool(data.get("group", False)),
+            source=data.get("source"),
+            offset_x=int(data.get("offset_x", 0)),
+            offset_y=int(data.get("offset_y", 0)),
+            width=data.get("width"),
+            height=data.get("height"),
         )
 
 
@@ -77,6 +97,38 @@ class GimpProject:
         """Append *layer* to the top of the stack."""
         self.layers.append(layer)
 
+    def _next_layer_id(self) -> int:
+        """Return the next available layer ID."""
+        existing = [lyr.id for lyr in self.layers]
+        return max(existing, default=-1) + 1
+
+    def add_layer_from_file(
+        self,
+        path: str,
+        name: str | None = None,
+        position: int | None = None,
+        opacity: float = 1.0,
+        blend_mode: str = "normal",
+    ) -> LayerInfo:
+        """Add a layer from an image file. Returns the new layer."""
+        import os
+        if not os.path.exists(path):
+            raise FileNotFoundError(f"Image file not found: {path}")
+        layer_name = name or os.path.basename(path)
+        layer = LayerInfo(
+            id=self._next_layer_id(),
+            name=layer_name,
+            source=os.path.abspath(path),
+            opacity=opacity,
+            blend_mode=blend_mode,
+        )
+        if position is not None:
+            pos = max(0, min(position, len(self.layers)))
+            self.layers.insert(pos, layer)
+        else:
+            self.layers.insert(0, layer)
+        return layer
+
     def remove_layer(self, layer_id: int) -> bool:
         """Remove the layer with *layer_id*.  Returns True if found."""
         before = len(self.layers)
@@ -87,6 +139,67 @@ class GimpProject:
                 self.active_layer_index, max(0, len(self.layers) - 1)
             )
         return removed
+
+    def remove_layer_at_index(self, index: int) -> LayerInfo | None:
+        """Remove the layer at *index*. Returns the removed layer or None."""
+        if index < 0 or index >= len(self.layers):
+            return None
+        removed = self.layers.pop(index)
+        self.active_layer_index = min(
+            self.active_layer_index, max(0, len(self.layers) - 1)
+        )
+        return removed
+
+    def duplicate_layer_at(self, index: int) -> LayerInfo | None:
+        """Duplicate the layer at *index*. Returns the new layer or None."""
+        if index < 0 or index >= len(self.layers):
+            return None
+        orig = self.layers[index]
+        dup = LayerInfo(
+            id=self._next_layer_id(),
+            name=f"{orig.name} copy",
+            opacity=orig.opacity,
+            visible=orig.visible,
+            blend_mode=orig.blend_mode,
+            source=orig.source,
+            offset_x=orig.offset_x,
+            offset_y=orig.offset_y,
+            width=orig.width,
+            height=orig.height,
+        )
+        self.layers.insert(index, dup)
+        return dup
+
+    def move_layer(self, index: int, to_index: int) -> bool:
+        """Move layer from *index* to *to_index*. Returns True if valid."""
+        if index < 0 or index >= len(self.layers) or to_index < 0 or to_index >= len(self.layers):
+            return False
+        if index == to_index:
+            return True
+        layer = self.layers.pop(index)
+        self.layers.insert(to_index, layer)
+        return True
+
+    def set_layer_property(self, index: int, prop: str, value: Any) -> bool:
+        """Set a layer property. Returns True if valid."""
+        if index < 0 or index >= len(self.layers):
+            return False
+        layer = self.layers[index]
+        if prop == "name":
+            layer.name = str(value)
+        elif prop == "opacity":
+            layer.opacity = float(value)
+        elif prop == "visible":
+            layer.visible = str(value).lower() in ("true", "1", "yes")
+        elif prop == "mode":
+            layer.blend_mode = str(value)
+        elif prop == "offset_x":
+            layer.offset_x = int(value)
+        elif prop == "offset_y":
+            layer.offset_y = int(value)
+        else:
+            return False
+        return True
 
     # ------------------------------------------------------------------
     # Serialisation

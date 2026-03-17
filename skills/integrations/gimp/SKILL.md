@@ -22,16 +22,16 @@ with Pillow-based rendering and optional GIMP backend for advanced operations.
 sven-integrations-gimp --json project new -o /tmp/project.json --width 1920 --height 1080
 
 # Add a background layer from file
-sven-integrations-gimp --json layer add-from-file photo.jpg --name Background -p /tmp/project.json
+sven-integrations-gimp --json -p /tmp/project.json layer add-from-file photo.jpg --name Background
 
 # Add a text layer
-sven-integrations-gimp --json draw text "Hello World" --layer 0 --x 100 --y 100 -p /tmp/project.json
+sven-integrations-gimp --json -p /tmp/project.json draw text --text "Hello World" --layer 0 --x 100 --y 100
 
 # Apply brightness filter
-sven-integrations-gimp --json filter add brightness --layer 0 --param factor=1.2 -p /tmp/project.json
+sven-integrations-gimp --json -p /tmp/project.json filter add brightness --layer 0 --param factor=1.2
 
 # Render to PNG
-sven-integrations-gimp --json export render output.png -p /tmp/project.json
+sven-integrations-gimp --json -p /tmp/project.json export render output.png
 ```
 
 ## Command groups
