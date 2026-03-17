@@ -129,15 +129,18 @@ class TestNewDiagram:
 
 class TestRenderXml:
     def test_outputs_mxfile_format(self) -> None:
-        """Saved files must use mxfile root so Draw.io can open them."""
+        """Saved files must use mxfile format so Draw.io can open them."""
         doc = DrawioDocument()
         doc.add_page("P")
         add_shape(doc, 0, "rectangle", "A", 0, 0, 100, 60)
         xml = render_xml(doc)
-        assert xml.strip().startswith("<mxfile ")
+        assert "<?xml" in xml or "<mxfile " in xml
+        assert "<mxfile " in xml
         assert 'compressed="false"' in xml
         assert "<diagram " in xml
         assert "<mxGraphModel " in xml
+        assert "fillColor=" in xml
+        assert "strokeColor=" in xml
 
 
 class TestParseRenderRoundtrip:

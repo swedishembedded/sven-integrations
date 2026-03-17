@@ -9,12 +9,18 @@ import click
 from ..shared import cli_main, emit, emit_error, emit_json, emit_result
 from .backend import DrawioBackend, DrawioError
 from .drawio_xml import (
+    EDGE_STYLE_PRESETS,
+    SHAPE_TYPES,
     add_connector,
     add_shape,
+    move_cell,
     parse_diagram,
     remove_cell,
+    render_svg,
     render_xml,
+    resize_cell,
     update_cell_label,
+    update_cell_style,
 )
 from .project import DrawioDocument
 from .session import DrawioSession
@@ -152,6 +158,49 @@ def cmd_open(ctx: click.Context, path: str) -> None:
 # ---------------------------------------------------------------------------
 
 
+@drawio_cli.command("info")
+@click.pass_context
+def cmd_info(ctx: click.Context) -> None:
+    """Show document summary: pages, shape counts, edge counts."""
+    session = _get_session(ctx)
+    doc = _load_doc(session)
+    name = session.data.get("name", "Untitled")
+    pages_info = [
+        {
+            "name": p.name,
+            "shapes": sum(1 for c in p.cells if c.vertex),
+            "edges": sum(1 for c in p.cells if c.edge),
+        }
+        for p in doc.pages
+    ]
+    info = {
+        "name": name,
+        "pages": len(doc.pages),
+        "pages_detail": pages_info,
+        "total_shapes": sum(x["shapes"] for x in pages_info),
+        "total_edges": sum(x["edges"] for x in pages_info),
+    }
+    if ctx.obj.get("json"):
+        emit_json(info)
+    else:
+        emit(f"Document: {name!r} — {info['pages']} page(s), {info['total_shapes']} shapes, {info['total_edges']} edges")
+        for p in pages_info:
+            emit(f"  Page {p['name']!r}: {p['shapes']} shapes, {p['edges']} edges")
+
+
+@drawio_cli.command("xml")
+@click.pass_context
+def cmd_xml(ctx: click.Context) -> None:
+    """Print the raw .drawio XML for the current document."""
+    session = _get_session(ctx)
+    doc = _load_doc(session)
+    xml = render_xml(doc)
+    if ctx.obj.get("json"):
+        emit_json({"xml": xml})
+    else:
+        emit(xml)
+
+
 @drawio_cli.command("save")
 @click.argument("path", type=click.Path())
 @click.pass_context
@@ -165,6 +214,33 @@ def cmd_save(ctx: click.Context, path: str) -> None:
     p.write_text(xml, encoding="utf-8")
     emit_result(
         f"Saved to {path}",
+        {"status": "saved", "path": path},
+    )
+
+
+# ---------------------------------------------------------------------------
+# svg
+# ---------------------------------------------------------------------------
+
+
+@drawio_cli.command("svg")
+@click.argument("path", type=click.Path())
+@click.option("--page", "page_idx", default=0, help="Page index to render (0-based).")
+@click.pass_context
+def cmd_svg(ctx: click.Context, path: str, page_idx: int) -> None:
+    """Render the current diagram page to a standalone SVG file (pure Python, no external tools).
+
+    The SVG can be opened directly in Cursor's file preview, any web browser,
+    image viewer, or vector editor.
+    """
+    session = _get_session(ctx)
+    doc = _load_doc(session)
+    svg = render_svg(doc, page_idx=page_idx)
+    p = Path(path)
+    p.parent.mkdir(parents=True, exist_ok=True)
+    p.write_text(svg, encoding="utf-8")
+    emit_result(
+        f"SVG saved to {path}",
         {"status": "saved", "path": path},
     )
 
@@ -267,6 +343,112 @@ def shape_label(ctx: click.Context, cell_id: str, text: str) -> None:
         emit_error(f"Cell not found: {cell_id}")
 
 
+@shape_group.command("move")
+@click.option("--id", "cell_id", required=True, help="Cell ID to move.")
+@click.option("--x", required=True, type=float)
+@click.option("--y", required=True, type=float)
+@click.pass_context
+def shape_move(ctx: click.Context, cell_id: str, x: float, y: float) -> None:
+    """Move a shape to new coordinates."""
+    session = _get_session(ctx)
+    doc = _load_doc(session)
+    ok = move_cell(doc, 0, cell_id, x, y)
+    if ok:
+        _save_doc(session, doc)
+        emit_result(f"Moved {cell_id}", {"status": "moved", "cell_id": cell_id, "x": x, "y": y})
+    else:
+        emit_error(f"Cell not found: {cell_id}")
+
+
+@shape_group.command("resize")
+@click.option("--id", "cell_id", required=True, help="Cell ID to resize.")
+@click.option("--width", "-w", required=True, type=float)
+@click.option("--height", "-H", required=True, type=float)
+@click.pass_context
+def shape_resize(ctx: click.Context, cell_id: str, width: float, height: float) -> None:
+    """Resize a shape."""
+    session = _get_session(ctx)
+    doc = _load_doc(session)
+    ok = resize_cell(doc, 0, cell_id, width, height)
+    if ok:
+        _save_doc(session, doc)
+        emit_result(
+            f"Resized {cell_id}",
+            {"status": "resized", "cell_id": cell_id, "width": width, "height": height},
+        )
+    else:
+        emit_error(f"Cell not found: {cell_id}")
+
+
+@shape_group.command("style")
+@click.option("--id", "cell_id", required=True, help="Cell ID.")
+@click.argument("key")
+@click.argument("value")
+@click.pass_context
+def shape_style(ctx: click.Context, cell_id: str, key: str, value: str) -> None:
+    """Set a single style property on a shape.
+
+    Common keys: fillColor, strokeColor, fontColor, fontSize, rounded,
+    opacity, shadow, dashed, strokeWidth.
+
+    Example: shape style --id abc123 fillColor #FF0000
+    """
+    session = _get_session(ctx)
+    doc = _load_doc(session)
+    ok = update_cell_style(doc, 0, cell_id, {key: value})
+    if ok:
+        _save_doc(session, doc)
+        emit_result(
+            f"Style updated: {cell_id} {key}={value}",
+            {"status": "updated", "cell_id": cell_id, "key": key, "value": value},
+        )
+    else:
+        emit_error(f"Cell not found: {cell_id}")
+
+
+@shape_group.command("info")
+@click.option("--id", "cell_id", required=True, help="Cell ID.")
+@click.pass_context
+def shape_info(ctx: click.Context, cell_id: str) -> None:
+    """Show detailed info for a shape (geometry, style properties)."""
+    session = _get_session(ctx)
+    doc = _load_doc(session)
+    cell = doc.find_cell(cell_id)
+    if cell is None:
+        emit_error(f"Cell not found: {cell_id}")
+        return
+    from .drawio_xml import _parse_style
+    info = {
+        "cell_id": cell.cell_id,
+        "value": cell.value,
+        "style": cell.style,
+        "style_parsed": _parse_style(cell.style),
+        "x": cell.geometry.x,
+        "y": cell.geometry.y,
+        "width": cell.geometry.width,
+        "height": cell.geometry.height,
+        "vertex": cell.vertex,
+        "edge": cell.edge,
+    }
+    if ctx.obj.get("json"):
+        emit_json(info)
+    else:
+        emit(f"  {cell.cell_id}: {cell.value!r}")
+        emit(f"  Position: ({cell.geometry.x}, {cell.geometry.y}), Size: {cell.geometry.width}×{cell.geometry.height}")
+        emit(f"  Style: {cell.style}")
+
+
+@shape_group.command("types")
+@click.pass_context
+def shape_types(ctx: click.Context) -> None:
+    """List all available shape type presets."""
+    if ctx.obj.get("json"):
+        emit_json(SHAPE_TYPES)
+    else:
+        for name, desc in sorted(SHAPE_TYPES.items()):
+            emit(f"  {name:<16} {desc}")
+
+
 @shape_group.command("list")
 @click.pass_context
 def shape_list(ctx: click.Context) -> None:
@@ -274,7 +456,16 @@ def shape_list(ctx: click.Context) -> None:
     session = _get_session(ctx)
     doc = _load_doc(session)
     cells = [
-        {"page": p.name, "cell_id": c.cell_id, "value": c.value, "style": c.style}
+        {
+            "page": p.name,
+            "cell_id": c.cell_id,
+            "value": c.value,
+            "style": c.style,
+            "x": c.geometry.x,
+            "y": c.geometry.y,
+            "width": c.geometry.width,
+            "height": c.geometry.height,
+        }
         for p in doc.pages
         for c in p.cells
         if c.vertex
@@ -283,7 +474,7 @@ def shape_list(ctx: click.Context) -> None:
         emit_json(cells)
     else:
         for item in cells:
-            emit(f"  [{item['page']}] {item['cell_id'][:8]}… {item['value']!r}")
+            emit(f"  [{item['page']}] {item['cell_id'][:8]}… {item['value']!r} @ ({item['x']}, {item['y']})")
 
 
 # ---------------------------------------------------------------------------
@@ -301,16 +492,22 @@ def connector_group(ctx: click.Context) -> None:
 @click.option("--from", "src_id", required=True, help="Source cell ID.")
 @click.option("--to", "tgt_id", required=True, help="Target cell ID.")
 @click.option("--label", default="", help="Edge label.")
+@click.option(
+    "--style",
+    "edge_style",
+    default="orthogonal",
+    help="Edge style preset: straight, orthogonal (default), curved, entity-relation.",
+)
 @click.pass_context
-def connector_add(ctx: click.Context, src_id: str, tgt_id: str, label: str) -> None:
+def connector_add(ctx: click.Context, src_id: str, tgt_id: str, label: str, edge_style: str) -> None:
     """Add a connector between two cells."""
     session = _get_session(ctx)
     doc = _load_doc(session)
-    eid = add_connector(doc, 0, src_id, tgt_id, label)
+    eid = add_connector(doc, 0, src_id, tgt_id, label, edge_style=edge_style)
     _save_doc(session, doc)
     emit_result(
         f"Connector added: {eid}",
-        {"status": "added", "edge_id": eid, "from": src_id, "to": tgt_id},
+        {"status": "added", "edge_id": eid, "from": src_id, "to": tgt_id, "style": edge_style},
     )
 
 
@@ -327,6 +524,85 @@ def connector_remove(ctx: click.Context, edge_id: str) -> None:
         emit_result(f"Removed edge {edge_id}", {"status": "removed", "edge_id": edge_id})
     else:
         emit_error(f"Edge not found: {edge_id}")
+
+
+@connector_group.command("label")
+@click.option("--id", "edge_id", required=True)
+@click.option("--text", required=True)
+@click.pass_context
+def connector_label(ctx: click.Context, edge_id: str, text: str) -> None:
+    """Update the label on a connector."""
+    session = _get_session(ctx)
+    doc = _load_doc(session)
+    ok = update_cell_label(doc, 0, edge_id, text)
+    if ok:
+        _save_doc(session, doc)
+        emit_result(f"Label updated: {edge_id}", {"status": "updated", "edge_id": edge_id})
+    else:
+        emit_error(f"Edge not found: {edge_id}")
+
+
+@connector_group.command("style")
+@click.option("--id", "edge_id", required=True, help="Edge ID.")
+@click.argument("key")
+@click.argument("value")
+@click.pass_context
+def connector_style(ctx: click.Context, edge_id: str, key: str, value: str) -> None:
+    """Set a single style property on a connector.
+
+    Common keys: strokeColor, strokeWidth, dashed, endArrow, startArrow,
+    edgeStyle, curved, rounded, opacity.
+
+    Example: connector style --id abc123 strokeColor #FF0000
+    """
+    session = _get_session(ctx)
+    doc = _load_doc(session)
+    ok = update_cell_style(doc, 0, edge_id, {key: value})
+    if ok:
+        _save_doc(session, doc)
+        emit_result(
+            f"Style updated: {edge_id} {key}={value}",
+            {"status": "updated", "edge_id": edge_id, "key": key, "value": value},
+        )
+    else:
+        emit_error(f"Edge not found: {edge_id}")
+
+
+@connector_group.command("styles")
+@click.pass_context
+def connector_styles(ctx: click.Context) -> None:
+    """List available edge style presets."""
+    if ctx.obj.get("json"):
+        emit_json(EDGE_STYLE_PRESETS)
+    else:
+        for name, style in sorted(EDGE_STYLE_PRESETS.items()):
+            emit(f"  {name:<20} {style}")
+
+
+@connector_group.command("list")
+@click.pass_context
+def connector_list(ctx: click.Context) -> None:
+    """List all connectors (edges) in the document."""
+    session = _get_session(ctx)
+    doc = _load_doc(session)
+    edges = [
+        {
+            "page": p.name,
+            "edge_id": c.cell_id,
+            "value": c.value,
+            "from": c.source_id,
+            "to": c.target_id,
+            "style": c.style,
+        }
+        for p in doc.pages
+        for c in p.cells
+        if c.edge
+    ]
+    if ctx.obj.get("json"):
+        emit_json(edges)
+    else:
+        for e in edges:
+            emit(f"  [{e['page']}] {e['edge_id'][:8]}… {e['from'][:8] if e['from'] else '?'}→{e['to'][:8] if e['to'] else '?'} {e['value']!r}")
 
 
 # ---------------------------------------------------------------------------
