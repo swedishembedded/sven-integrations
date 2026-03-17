@@ -108,6 +108,12 @@ TOOLS=(
 
 # ── JSON output ────────────────────────────────────────────────────────────
 
+@test "sven-integrations-zoom --json auth status creates valid JSON" {
+    run sven-integrations-zoom --json auth status
+    [ "$status" -eq 0 ]
+    echo "$output" | python3 -c "import sys,json; json.load(sys.stdin)"
+}
+
 @test "sven-integrations-gimp --json project new creates valid JSON project" {
     local tmpfile
     tmpfile="$(mktemp /tmp/sven-integrations-test-XXXXXX.json)"

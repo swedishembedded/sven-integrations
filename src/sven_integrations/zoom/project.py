@@ -39,6 +39,9 @@ class ZoomMeetingConfig:
     waiting_room: bool = True
     recording_enabled: bool = False
     participants: list[Participant] = field(default_factory=list)
+    start_time: str | None = None  # ISO 8601, e.g. 2025-03-25T14:00:00Z
+    agenda: str = ""
+    meeting_type: int = 2  # 1=instant, 2=scheduled, 3=recurring no fixed, 8=recurring fixed
 
     # ------------------------------------------------------------------
     # Serialisation
@@ -54,6 +57,9 @@ class ZoomMeetingConfig:
             "waiting_room": self.waiting_room,
             "recording_enabled": self.recording_enabled,
             "participants": [p.to_dict() for p in self.participants],
+            "start_time": self.start_time,
+            "agenda": self.agenda,
+            "meeting_type": self.meeting_type,
         }
 
     @classmethod
@@ -67,6 +73,9 @@ class ZoomMeetingConfig:
             passcode=str(d.get("passcode", "")),
             waiting_room=bool(d.get("waiting_room", True)),
             recording_enabled=bool(d.get("recording_enabled", False)),
+            start_time=d.get("start_time"),
+            agenda=str(d.get("agenda", "")),
+            meeting_type=int(d.get("meeting_type", 2)),
         )
         cfg.participants = [Participant.from_dict(p) for p in d.get("participants", [])]
         return cfg

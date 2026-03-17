@@ -5,7 +5,7 @@ description: |
   participants, list or download recordings, or authenticate with Zoom. Requires
   Zoom OAuth2 credentials. Trigger phrases: "create Zoom meeting", "schedule meeting",
   "Zoom recording", "list meetings", "add participant", "manage Zoom".
-version: 2.0.0
+version: 2.1.0
 sven:
   requires_bins: [sven-integrations-zoom]
 ---
@@ -40,7 +40,7 @@ sven-integrations-zoom --json -p "$P" meeting create \
   --start-time "2025-03-25T14:00:00Z" \
   --duration 60 \
   --timezone "UTC" \
-  --password "secret123"
+  --passcode "secret123"
 
 # 3. List all meetings
 sven-integrations-zoom --json -p "$P" meeting list
@@ -72,53 +72,53 @@ sven-integrations-zoom --json -p "$P" meeting get --id <MEETING_ID>
 ```
 ZOOM_CLIENT_ID        OAuth app Client ID
 ZOOM_CLIENT_SECRET    OAuth app Client Secret
-ZOOM_REDIRECT_URI     OAuth redirect URI (default: http://localhost:8080)
+ZOOM_REDIRECT_URI     OAuth redirect URI (default: http://localhost:4199/callback)
 ```
 
 ### meeting
 | Command | Description | Key flags |
 |---------|-------------|-----------|
-| `create` | Create a new meeting | `--topic TEXT`, `--start-time ISO8601`, `--duration MINUTES`, `--timezone TZ`, `--password PASS`, `--agenda TEXT`, `--type instant\|scheduled\|recurring` |
-| `list` | List all meetings for the user | `--user-id ID` (default: "me"), `--type all\|scheduled\|upcoming` |
+| `create` | Create a new meeting | `--topic TEXT`, `--start-time ISO8601`, `--duration MINUTES`, `--timezone TZ`, `--passcode PASS`, `--agenda TEXT`, `--type instant\|scheduled\|recurring\|recurring_fixed` |
+| `list` | List meetings for the user | `--type scheduled\|live\|past\|pastOne` |
 | `get` | Get meeting details | `--id MEETING_ID` |
+| `update` | Update meeting properties | `--id MEETING_ID`, `--topic TEXT`, `--start-time ISO8601`, `--duration`, `--timezone`, `--passcode`, `--agenda` |
 | `delete` | Delete a meeting | `--id MEETING_ID` |
-| `update` | Update meeting properties | `--id MEETING_ID`, `--topic TEXT`, `--start-time ISO8601`, etc. |
+| `url` | Return join or start URL | `--id MEETING_ID`, `--passcode PASS`, `--host` |
 
-**Meeting types:**
+**Meeting types (create):**
 ```
-1    Instant meeting
-2    Scheduled meeting (default)
-3    Recurring meeting (no fixed end)
-8    Recurring meeting with fixed end date
+instant         Instant meeting (type 1)
+scheduled       Scheduled meeting (type 2, default)
+recurring       Recurring meeting, no fixed time (type 3)
+recurring_fixed Recurring meeting with fixed end (type 8)
 ```
 
 ### participant
 | Command | Description | Key flags |
 |---------|-------------|-----------|
-| `add` | Add (register) a participant | `--meeting-id ID`, `--email EMAIL`, `--name NAME` |
-| `list` | List registered participants | `--meeting-id ID` |
-| `remove` | Remove a participant | `--meeting-id ID`, `--email EMAIL` |
-| `batch` | Add multiple participants from CSV | `--meeting-id ID`, `--csv PATH` |
-| `attended` | List participants who attended | `--meeting-id ID` |
+| `add MEETING_ID` | Register a participant | `--email EMAIL`, `--first-name NAME`, `--last-name NAME` |
+| `list MEETING_ID` | List registrants | `--status pending\|approved\|denied` |
+| `remove MEETING_ID REGISTRANT_ID` | Remove a registrant | — |
+| `batch MEETING_ID CSV_FILE` | Add multiple participants from CSV | — |
+| `attended MEETING_ID` | List participants who attended | — |
 
 **Batch CSV format:**
 ```csv
-email,name
-alice@example.com,Alice Smith
-bob@example.com,Bob Jones
+email,first_name,last_name
+alice@example.com,Alice,Smith
+bob@example.com,Bob,Jones
 ```
 
 ### recording
 | Command | Description | Key flags |
 |---------|-------------|-----------|
-| `list` | List recordings for a meeting | `--meeting-id ID` |
+| `list` | List recordings | `--meeting-id ID` OR `--from YYYY-MM-DD` and `--to YYYY-MM-DD` |
 | `download` | Download a recording file | `--meeting-id ID`, `--output PATH` (absolute) |
 
 ### session
 | Command | Description |
 |---------|-------------|
-| `undo` | Undo last operation |
-| `history` | Show operation history |
+| `show` | Show active session data |
 | `list` | List all sessions |
 | `delete` | Delete current session |
 
@@ -143,28 +143,28 @@ sven-integrations-zoom --json -p "$P" meeting create \
   --start-time "2025-04-01T15:00:00Z" \
   --duration 90 \
   --timezone "Europe/London" \
-  --password "sprint123" \
+  --passcode "sprint123" \
   --agenda "Review sprint velocity, demo new features, retrospective"
 
 # Note the meeting ID from the output JSON
 MEETING_ID="<id from output>"
 
 # Add participants
-sven-integrations-zoom --json -p "$P" participant add \
-  --meeting-id "$MEETING_ID" \
+sven-integrations-zoom --json -p "$P" participant add "$MEETING_ID" \
   --email "alice@company.com" \
-  --name "Alice"
+  --first-name "Alice" \
+  --last-name "Smith"
 
-sven-integrations-zoom --json -p "$P" participant add \
-  --meeting-id "$MEETING_ID" \
+sven-integrations-zoom --json -p "$P" participant add "$MEETING_ID" \
   --email "bob@company.com" \
-  --name "Bob"
+  --first-name "Bob" \
+  --last-name "Jones"
 
 # Verify participants
-sven-integrations-zoom --json -p "$P" participant list --meeting-id "$MEETING_ID"
+sven-integrations-zoom --json -p "$P" participant list "$MEETING_ID"
 
 # List all upcoming meetings
-sven-integrations-zoom --json -p "$P" meeting list --type upcoming
+sven-integrations-zoom --json -p "$P" meeting list --type scheduled
 
 # After the meeting, list and download recordings
 sven-integrations-zoom --json -p "$P" recording list --meeting-id "$MEETING_ID"

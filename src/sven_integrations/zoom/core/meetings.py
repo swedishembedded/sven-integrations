@@ -34,7 +34,7 @@ def create_meeting(
 
     body: dict[str, Any] = {
         "topic": config.topic,
-        "type": 2,  # scheduled meeting
+        "type": config.meeting_type,
         "duration": config.duration_minutes,
         "timezone": config.timezone,
         "settings": {
@@ -44,6 +44,10 @@ def create_meeting(
     }
     if config.passcode:
         body["password"] = config.passcode
+    if config.start_time:
+        body["start_time"] = config.start_time
+    if config.agenda:
+        body["agenda"] = config.agenda
 
     return _api().request("POST", f"/users/{user_id}/meetings", body, token)
 
@@ -71,14 +75,16 @@ def delete_meeting(token: str, meeting_id: str) -> None:
 def list_meetings(
     token: str,
     user_id: str,
+    meeting_type: str = "scheduled",  # scheduled | live | past | pastOne
     page_size: int = 30,
 ) -> list[dict[str, Any]]:
     """Return a page of meetings for *user_id*.
 
+    meeting_type: "scheduled" | "live" | "upcoming" | "all"
     Handles pagination automatically and returns all meetings up to
     ``page_size`` results.
     """
-    path = f"/users/{user_id}/meetings?type=scheduled&page_size={min(page_size, 300)}"
+    path = f"/users/{user_id}/meetings?type={meeting_type}&page_size={min(page_size, 300)}"
     result = _api().request("GET", path, None, token)
     return result.get("meetings", [])
 

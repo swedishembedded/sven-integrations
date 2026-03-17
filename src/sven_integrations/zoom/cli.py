@@ -135,22 +135,34 @@ def meeting_grp() -> None:
 
 @meeting_grp.command("create")
 @click.option("--topic", required=True, help="Meeting topic.")
+@click.option("--start-time", "start_time", default=None, help="Start time ISO 8601 (e.g. 2025-03-25T14:00:00Z).")
 @click.option("--duration", default=60, type=int, help="Duration in minutes.")
 @click.option("--timezone", default="UTC", help="IANA timezone.")
 @click.option("--passcode", default="", help="Meeting passcode.")
+@click.option("--agenda", default="", help="Meeting agenda/description.")
+@click.option(
+    "--type", "meeting_type",
+    type=click.Choice(["instant", "scheduled", "recurring", "recurring_fixed"]),
+    default="scheduled",
+    help="Meeting type: instant, scheduled, recurring, recurring_fixed.",
+)
 @click.option("--no-waiting-room", is_flag=True, default=False)
 @click.option("--record", is_flag=True, default=False, help="Enable cloud recording.")
 @click.pass_context
 def meeting_create(
     ctx: click.Context,
     topic: str,
+    start_time: Optional[str],
     duration: int,
     timezone: str,
     passcode: str,
+    agenda: str,
+    meeting_type: str,
     no_waiting_room: bool,
     record: bool,
 ) -> None:
-    """Create a new scheduled meeting."""
+    """Create a new meeting."""
+    type_map = {"instant": 1, "scheduled": 2, "recurring": 3, "recurring_fixed": 8}
     sess = _get_session(ctx.obj["session"])
     token = _require_token(sess)
     cfg = ZoomMeetingConfig(
@@ -161,6 +173,9 @@ def meeting_create(
         passcode=passcode,
         waiting_room=not no_waiting_room,
         recording_enabled=record,
+        start_time=start_time,
+        agenda=agenda,
+        meeting_type=type_map[meeting_type],
     )
     try:
         result = meet_mod.create_meeting(token, "me", cfg)
@@ -173,13 +188,19 @@ def meeting_create(
 
 
 @meeting_grp.command("list")
+@click.option(
+    "--type", "meeting_type",
+    type=click.Choice(["scheduled", "live", "past", "pastOne"]),
+    default="scheduled",
+    help="Filter: scheduled, live, past, pastOne.",
+)
 @click.pass_context
-def meeting_list(ctx: click.Context) -> None:
-    """List upcoming scheduled meetings."""
+def meeting_list(ctx: click.Context, meeting_type: str) -> None:
+    """List meetings for the authenticated user."""
     sess = _get_session(ctx.obj["session"])
     token = _require_token(sess)
     try:
-        meetings = meet_mod.list_meetings(token, "me")
+        meetings = meet_mod.list_meetings(token, "me", meeting_type=meeting_type)
     except ZoomApiError as exc:
         emit_error(str(exc))
     emit_json(meetings)
@@ -197,6 +218,50 @@ def meeting_get(ctx: click.Context, meeting_id: str) -> None:
     except ZoomApiError as exc:
         emit_error(str(exc))
     emit_json(info)
+
+
+@meeting_grp.command("update")
+@click.option("--id", "meeting_id", required=True, help="Meeting ID.")
+@click.option("--topic", default=None, help="Meeting topic.")
+@click.option("--start-time", "start_time", default=None, help="Start time ISO 8601.")
+@click.option("--duration", default=None, type=int, help="Duration in minutes.")
+@click.option("--timezone", default=None, help="IANA timezone.")
+@click.option("--passcode", default=None, help="Meeting passcode.")
+@click.option("--agenda", default=None, help="Meeting agenda.")
+@click.pass_context
+def meeting_update(
+    ctx: click.Context,
+    meeting_id: str,
+    topic: Optional[str],
+    start_time: Optional[str],
+    duration: Optional[int],
+    timezone: Optional[str],
+    passcode: Optional[str],
+    agenda: Optional[str],
+) -> None:
+    """Update meeting properties."""
+    sess = _get_session(ctx.obj["session"])
+    token = _require_token(sess)
+    updates: dict[str, object] = {}
+    if topic is not None:
+        updates["topic"] = topic
+    if start_time is not None:
+        updates["start_time"] = start_time
+    if duration is not None:
+        updates["duration"] = duration
+    if timezone is not None:
+        updates["timezone"] = timezone
+    if passcode is not None:
+        updates["password"] = passcode
+    if agenda is not None:
+        updates["agenda"] = agenda
+    if not updates:
+        emit_error("Provide at least one --topic, --start-time, --duration, --timezone, --passcode, or --agenda.")
+    try:
+        meet_mod.update_meeting(token, meeting_id, updates)
+    except ZoomApiError as exc:
+        emit_error(str(exc))
+    emit_result(f"Meeting {meeting_id} updated.", {"status": "ok", "meeting_id": meeting_id})
 
 
 @meeting_grp.command("delete")
@@ -237,18 +302,35 @@ def recording_grp() -> None:
 
 
 @recording_grp.command("list")
-@click.option("--from", "from_date", required=True, help="Start date (YYYY-MM-DD).")
-@click.option("--to", "to_date", required=True, help="End date (YYYY-MM-DD).")
+@click.option("--meeting-id", "meeting_id", default=None, help="Get recordings for a specific meeting.")
+@click.option("--from", "from_date", default=None, help="Start date (YYYY-MM-DD) for date-range list.")
+@click.option("--to", "to_date", default=None, help="End date (YYYY-MM-DD) for date-range list.")
 @click.pass_context
-def recording_list(ctx: click.Context, from_date: str, to_date: str) -> None:
-    """List cloud recordings in a date range."""
+def recording_list(
+    ctx: click.Context,
+    meeting_id: Optional[str],
+    from_date: Optional[str],
+    to_date: Optional[str],
+) -> None:
+    """List cloud recordings: by meeting ID or by date range."""
     sess = _get_session(ctx.obj["session"])
     token = _require_token(sess)
-    try:
-        recordings = rec_mod.list_recordings(token, "me", from_date, to_date)
-    except ZoomApiError as exc:
-        emit_error(str(exc))
-    emit_json(recordings)
+    if meeting_id:
+        if from_date or to_date:
+            emit_error("Use either --meeting-id or --from/--to, not both.")
+        try:
+            info = rec_mod.get_recording_info(token, meeting_id)
+            emit_json(info)
+        except ZoomApiError as exc:
+            emit_error(str(exc))
+    else:
+        if not from_date or not to_date:
+            emit_error("Provide --meeting-id or both --from and --to.")
+        try:
+            recordings = rec_mod.list_recordings(token, "me", from_date, to_date)
+            emit_json(recordings)
+        except ZoomApiError as exc:
+            emit_error(str(exc))
 
 
 @recording_grp.command("download")
