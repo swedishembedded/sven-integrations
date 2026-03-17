@@ -51,8 +51,8 @@ def emit_result(human_msg: str, json_payload: dict[str, Any]) -> None:
         click.echo(human_msg)
 
 
-def emit_error(message: str, *, code: int = -1) -> None:
-    """Write an error to stderr and exit with non-zero code (-1 = failure)."""
+def emit_error(message: str, *, code: int = 1) -> None:
+    """Write an error to stderr and exit with non-zero code."""
     click.echo(f"Error: {message}", err=True)
     sys.exit(code)
 

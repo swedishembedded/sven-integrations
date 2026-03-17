@@ -11,6 +11,42 @@ from typing import Any
 
 
 @dataclass
+class DrawOperation:
+    """A single drawing operation stored on a layer."""
+
+    op_type: str  # text, rect, ellipse, line
+    params: dict[str, Any] = field(default_factory=dict)
+
+    def to_dict(self) -> dict[str, Any]:
+        return {"op_type": self.op_type, "params": dict(self.params)}
+
+    @classmethod
+    def from_dict(cls, data: dict[str, Any]) -> "DrawOperation":
+        return cls(
+            op_type=str(data["op_type"]),
+            params=dict(data.get("params", {})),
+        )
+
+
+@dataclass
+class FilterInfo:
+    """A filter recorded on a layer, applied during render."""
+
+    name: str
+    params: dict[str, Any] = field(default_factory=dict)
+
+    def to_dict(self) -> dict[str, Any]:
+        return {"name": self.name, "params": dict(self.params)}
+
+    @classmethod
+    def from_dict(cls, data: dict[str, Any]) -> "FilterInfo":
+        return cls(
+            name=str(data["name"]),
+            params=dict(data.get("params", {})),
+        )
+
+
+@dataclass
 class LayerInfo:
     """Describes a single layer within a GIMP image."""
 
@@ -25,6 +61,9 @@ class LayerInfo:
     offset_y: int = 0
     width: int | None = None
     height: int | None = None
+    fill_color: str | None = None  # Background fill: "white", "black", "transparent", or hex
+    draw_ops: list[DrawOperation] = field(default_factory=list)
+    filters: list[FilterInfo] = field(default_factory=list)
 
     def to_dict(self) -> dict[str, Any]:
         d: dict[str, Any] = {
@@ -44,6 +83,12 @@ class LayerInfo:
             d["width"] = self.width
         if self.height is not None:
             d["height"] = self.height
+        if self.fill_color is not None:
+            d["fill_color"] = self.fill_color
+        if self.draw_ops:
+            d["draw_ops"] = [op.to_dict() for op in self.draw_ops]
+        if self.filters:
+            d["filters"] = [f.to_dict() for f in self.filters]
         return d
 
     @classmethod
@@ -60,6 +105,9 @@ class LayerInfo:
             offset_y=int(data.get("offset_y", 0)),
             width=data.get("width"),
             height=data.get("height"),
+            fill_color=data.get("fill_color"),
+            draw_ops=[DrawOperation.from_dict(op) for op in data.get("draw_ops", [])],
+            filters=[FilterInfo.from_dict(f) for f in data.get("filters", [])],
         )
 
 
@@ -167,6 +215,9 @@ class GimpProject:
             offset_y=orig.offset_y,
             width=orig.width,
             height=orig.height,
+            fill_color=orig.fill_color,
+            draw_ops=list(orig.draw_ops),
+            filters=list(orig.filters),
         )
         self.layers.insert(index, dup)
         return dup
@@ -198,6 +249,8 @@ class GimpProject:
             layer.offset_x = int(value)
         elif prop == "offset_y":
             layer.offset_y = int(value)
+        elif prop == "fill_color":
+            layer.fill_color = str(value)
         else:
             return False
         return True
@@ -211,12 +264,11 @@ class GimpProject:
             "height": self.height,
             "color_mode": self.color_mode,
             "dpi": self.dpi,
+            "name": self.name,
             "layers": [lyr.to_dict() for lyr in self.layers],
             "history": list(self.history),
             "active_layer_index": self.active_layer_index,
         }
-        if self.name != "untitled":
-            d["name"] = self.name
         return d
 
     @classmethod

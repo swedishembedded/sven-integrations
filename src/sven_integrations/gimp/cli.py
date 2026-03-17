@@ -19,7 +19,7 @@ from .core import canvas as canvas_ops
 from .core import export as export_ops
 from .core import filters as filter_ops
 from .core import layers as layer_ops
-from .project import GimpProject, LayerInfo
+from .project import DrawOperation, FilterInfo, GimpProject, LayerInfo
 from .session import GimpSession
 
 
@@ -47,6 +47,16 @@ def _merge_project_path(ctx: click.Context, project_path: Path | None) -> None:
                 sess.save()
             except (json.JSONDecodeError, KeyError):
                 pass
+
+
+def _get_session_and_project(ctx: click.Context) -> tuple[GimpSession, GimpProject] | None:
+    """Return (session, project) or emit error and return None."""
+    sess = GimpSession.open_or_create(ctx.obj["session_name"])
+    proj = sess.project
+    if proj is None:
+        emit_error("No project in session. Use 'project new' first.")
+        return None
+    return sess, proj
 
 
 # ---------------------------------------------------------------------------
@@ -187,6 +197,13 @@ def project_group(ctx: click.Context, project_path: Path | None) -> None:
     default=None,
     help="Save project JSON to this path.",
 )
+@click.option(
+    "--bg", "--background",
+    "background",
+    default="white",
+    show_default=True,
+    help="Background fill color (white, black, transparent, or #hex). Default: white.",
+)
 @click.pass_context
 def project_new(
     ctx: click.Context,
@@ -196,10 +213,25 @@ def project_new(
     dpi: float,
     name: str,
     output: Path | None,
+    background: str,
 ) -> None:
-    """Create a new blank GIMP image (canvas)."""
+    """Create a new blank image project with a Background layer at index 0."""
     sess = GimpSession.open_or_create(ctx.obj["session_name"])
     proj = sess.new_project(width, height, color_mode=mode, dpi=dpi, name=name)
+
+    # Auto-create a Background layer so --layer 0 works immediately
+    bg_layer = LayerInfo(
+        id=0,
+        name="Background",
+        opacity=1.0,
+        width=width,
+        height=height,
+        fill_color=background,
+    )
+    proj.layers = [bg_layer]
+    sess.project = proj
+    sess.save()
+
     payload: dict = {
         "ok": True,
         "width": width,
@@ -207,6 +239,7 @@ def project_new(
         "color_mode": mode,
         "dpi": dpi,
         "name": name,
+        "background": background,
         "project": proj.to_dict(),
     }
     if output is not None:
@@ -218,7 +251,7 @@ def project_new(
         payload["path"] = str(output)
         ctx.obj["project_path"] = output
     emit_result(
-        f"Created {width}×{height} {mode} image at {dpi} DPI",
+        f"Created {width}×{height} {mode} image at {dpi} DPI (Background layer ready at index 0)",
         payload,
     )
 
@@ -327,7 +360,6 @@ def export_presets() -> None:
         {"name": "jpeg", "format": "JPEG", "quality": 90},
         {"name": "webp", "format": "WebP", "quality": 85},
         {"name": "tiff", "format": "TIFF"},
-        {"name": "pdf", "format": "PDF"},
     ]
     emit_result("Export presets:", {"presets": presets})
 
@@ -342,9 +374,9 @@ def export_preset_info(name: str) -> None:
 
 @export_group.command("render")
 @click.argument("output_path")
-@click.option("--preset", default="png", help="Export preset (png, jpeg, webp, tiff, pdf)")
+@click.option("--preset", default="png", help="Export preset (png, jpeg, webp, tiff)")
 @click.option("--overwrite", is_flag=True, help="Overwrite existing file")
-@click.option("--quality", "-q", type=int, default=None, help="Quality override (jpeg/webp)")
+@click.option("--quality", "-q", type=int, default=90, help="Quality override (jpeg/webp)")
 @click.option("--format", "fmt", type=str, default=None, help="Format override")
 @click.option("--project", "-p", "project_path", type=click.Path(path_type=Path, exists=False), default=None)
 @click.pass_context
@@ -353,42 +385,30 @@ def export_render(
     output_path: str,
     preset: str,
     overwrite: bool,
-    quality: int | None,
+    quality: int,
     fmt: str | None,
     project_path: Path | None,
 ) -> None:
-    """Render the project to an image file (builds GIMP export command)."""
+    """Render the project to an image file using Pillow."""
     _merge_project_path(ctx, project_path)
-    from pathlib import Path
     p = Path(output_path)
     if p.exists() and not overwrite:
         emit_error(f"Output exists: {output_path}. Use --overwrite.")
         return
-    fmt_key = (fmt or preset).lower()
-    q = quality if quality is not None else (90 if fmt_key in ("jpeg", "jpg", "webp") else 85)
+    fmt_key = (fmt or preset).lower().lstrip(".")
+    pair = _get_session_and_project(ctx)
+    if pair is None:
+        return
+    sess, proj = pair
     try:
-        fn_map = {
-            "png": lambda: export_ops.export_png(output_path),
-            "jpeg": lambda: export_ops.export_jpeg(output_path, q),
-            "jpg": lambda: export_ops.export_jpeg(output_path, q),
-            "tiff": lambda: export_ops.export_tiff(output_path),
-            "webp": lambda: export_ops.export_webp(output_path, q),
-            "pdf": lambda: export_ops.export_pdf(output_path),
-        }
-        handler = fn_map.get(fmt_key)
-        if handler is None:
-            emit_error(f"Unknown format: {fmt_key!r}")
-            return
-        result = handler()
-        cmd_str = " ".join(result["cmd"])
+        from .core.renderer import render_project, RenderError
+        result = render_project(proj, output_path, fmt=fmt_key, quality=quality)
         emit_result(
-            f"Export command ({fmt_key.upper()}):\n  {cmd_str}",
-            {"ok": True, "format": fmt_key, "path": output_path, "cmd": result["cmd"]},
+            f"Rendered {result['width']}×{result['height']} {fmt_key.upper()} → {output_path} ({result['size_bytes']} bytes)",
+            result,
         )
-    except export_ops.ExportError as exc:
+    except Exception as exc:
         emit_error(str(exc))
-
-
 
 
 # ---------------------------------------------------------------------------
@@ -468,7 +488,7 @@ def layer_add_from_file(
 @click.option("--name", "-n", default="New Layer", help="Layer name")
 @click.option("--width", "-w", type=int, default=None, help="Layer width (default: canvas)")
 @click.option("--height", "-h", type=int, default=None, help="Layer height (default: canvas)")
-@click.option("--fill", default="transparent", help="Fill: transparent, white, black, or hex")
+@click.option("--fill", default="transparent", help="Fill: transparent, white, black, or #hex")
 @click.option("--opacity", type=float, default=1.0)
 @click.option("--position", type=int, default=None, help="Stack position (0=top)")
 @click.option("--project", "-p", "project_path", type=click.Path(path_type=Path, exists=False), default=None)
@@ -498,6 +518,7 @@ def layer_new(
         opacity=opacity,
         width=w,
         height=h,
+        fill_color=fill if fill != "transparent" else None,
     )
     if position is not None:
         pos = max(0, min(position, len(proj.layers)))
@@ -556,7 +577,7 @@ def layer_move(ctx: click.Context, index: int, to: int) -> None:
 @click.argument("value")
 @click.pass_context
 def layer_set(ctx: click.Context, index: int, prop: str, value: str) -> None:
-    """Set a layer property (name, opacity, visible, mode, offset_x, offset_y)."""
+    """Set a layer property (name, opacity, visible, mode, offset_x, offset_y, fill_color)."""
     sess = GimpSession.open_or_create(ctx.obj["session_name"])
     proj = sess.project
     if proj is None:
@@ -580,11 +601,9 @@ def layer_flatten(ctx: click.Context) -> None:
     if proj is None:
         emit_error("No project in session.")
         return
-    # Flatten: keep only one composite layer
     if len(proj.layers) <= 1:
         emit_result("Nothing to flatten", {"ok": True, "status": "noop"})
         return
-    top = proj.layers[0]
     proj.layers = [LayerInfo(id=proj._next_layer_id(), name="Flattened", opacity=1.0)]
     sess.project = proj
     sess.save()
@@ -605,14 +624,13 @@ def layer_merge_down(ctx: click.Context, index: int) -> None:
     if index < 0 or index >= len(proj.layers) - 1:
         emit_error(f"Cannot merge-down layer {index} (need layer below)")
         return
-    # Merge: combine layer[index] and layer[index+1], keep at index+1 position
     merged = LayerInfo(
         id=proj._next_layer_id(),
         name=f"{proj.layers[index].name} + {proj.layers[index + 1].name}",
         opacity=1.0,
     )
     proj.layers.pop(index)
-    proj.layers[index] = merged  # index+1 becomes index after pop
+    proj.layers[index] = merged
     sess.project = proj
     sess.save()
     _maybe_save_project_path(ctx, sess)
@@ -652,13 +670,17 @@ def layer_list(ctx: click.Context) -> None:
         emit_error("No project in session.")
         return
     fmt = OutputFormatter(json_mode=ctx.obj.get("use_json", False))
-    for lyr in proj.layers:
+    for i, lyr in enumerate(proj.layers):
         fmt.record(
+            index=i,
             id=lyr.id,
             name=lyr.name,
             opacity=lyr.opacity,
             visible=lyr.visible,
             blend_mode=lyr.blend_mode,
+            fill_color=lyr.fill_color,
+            draw_ops=len(lyr.draw_ops),
+            filters=len(lyr.filters),
         )
     fmt.flush()
 
@@ -703,13 +725,18 @@ _FILTER_REGISTRY = [
     {"name": "contrast", "category": "adjustment", "params": ["factor"]},
     {"name": "saturation", "category": "adjustment", "params": ["factor"]},
     {"name": "sharpness", "category": "adjustment", "params": ["factor"]},
+    {"name": "sharpen", "category": "adjustment", "params": ["factor"]},
     {"name": "gaussian_blur", "category": "blur", "params": ["radius"]},
+    {"name": "blur", "category": "blur", "params": ["radius"]},
     {"name": "box_blur", "category": "blur", "params": ["radius"]},
+    {"name": "edge_enhance", "category": "stylize", "params": []},
     {"name": "unsharp_mask", "category": "blur", "params": ["radius", "percent", "threshold"]},
     {"name": "invert", "category": "stylize", "params": []},
     {"name": "grayscale", "category": "stylize", "params": []},
     {"name": "sepia", "category": "stylize", "params": ["strength"]},
-    {"name": "blur", "category": "blur", "params": ["radius"]},
+    {"name": "flip_h", "category": "transform", "params": []},
+    {"name": "flip_v", "category": "transform", "params": []},
+    {"name": "rotate", "category": "transform", "params": ["angle"]},
     {"name": "levels", "category": "adjustment", "params": ["in_lo", "in_hi", "gamma", "out_lo", "out_hi"]},
 ]
 
@@ -742,13 +769,12 @@ def filter_info(name: str) -> None:
 @click.option("--project", "-p", "project_path", type=click.Path(path_type=Path, exists=False), default=None)
 @click.pass_context
 def filter_add(ctx: click.Context, name: str, layer_index: int, params: tuple[str, ...], project_path: Path | None) -> None:
-    """Add a filter to a layer (recorded in project; applied on export)."""
+    """Add a filter to a layer (applied during export render)."""
     _merge_project_path(ctx, project_path)
-    sess = GimpSession.open_or_create(ctx.obj["session_name"])
-    proj = sess.project
-    if proj is None:
-        emit_error("No project in session.")
+    pair = _get_session_and_project(ctx)
+    if pair is None:
         return
+    sess, proj = pair
     if layer_index < 0 or layer_index >= len(proj.layers):
         emit_error(f"Layer index {layer_index} out of range.")
         return
@@ -759,14 +785,17 @@ def filter_add(ctx: click.Context, name: str, layer_index: int, params: tuple[st
             return
         k, v = p.split("=", 1)
         try:
-            v = float(v) if "." in v else int(v)
+            v = float(v) if "." in v else int(v)  # type: ignore[assignment]
         except ValueError:
             pass
         param_dict[k] = v
-    # Store filter on layer (LayerInfo would need filters list - extend model)
-    # For now, emit success and note that layer-level filters need model extension
+    fi = FilterInfo(name=name, params=param_dict)
+    proj.layers[layer_index].filters.append(fi)
+    sess.project = proj
+    sess.save()
+    _maybe_save_project_path(ctx, sess)
     emit_result(
-        f"Filter {name} added to layer {layer_index}",
+        f"Filter '{name}' added to layer {layer_index}",
         {"ok": True, "filter": name, "layer": layer_index, "params": param_dict},
     )
 
@@ -777,11 +806,26 @@ def filter_add(ctx: click.Context, name: str, layer_index: int, params: tuple[st
 @click.option("--project", "-p", "project_path", type=click.Path(path_type=Path, exists=False), default=None)
 @click.pass_context
 def filter_remove(ctx: click.Context, filter_index: int, layer_index: int, project_path: Path | None) -> None:
-    """Remove a filter by index."""
+    """Remove a filter by index from a layer."""
     _merge_project_path(ctx, project_path)
+    pair = _get_session_and_project(ctx)
+    if pair is None:
+        return
+    sess, proj = pair
+    if layer_index < 0 or layer_index >= len(proj.layers):
+        emit_error(f"Layer index {layer_index} out of range.")
+        return
+    layer = proj.layers[layer_index]
+    if filter_index < 0 or filter_index >= len(layer.filters):
+        emit_error(f"Filter index {filter_index} out of range (layer has {len(layer.filters)} filters).")
+        return
+    removed = layer.filters.pop(filter_index)
+    sess.project = proj
+    sess.save()
+    _maybe_save_project_path(ctx, sess)
     emit_result(
-        f"Removed filter {filter_index} from layer {layer_index}",
-        {"ok": True, "filter_index": filter_index, "layer": layer_index},
+        f"Removed filter {filter_index} ({removed.name}) from layer {layer_index}",
+        {"ok": True, "filter_index": filter_index, "filter": removed.name, "layer": layer_index},
     )
 
 
@@ -795,10 +839,25 @@ def filter_remove(ctx: click.Context, filter_index: int, layer_index: int, proje
 def filter_set(ctx: click.Context, filter_index: int, param: str, value: str, layer_index: int, project_path: Path | None) -> None:
     """Set a filter parameter."""
     _merge_project_path(ctx, project_path)
+    pair = _get_session_and_project(ctx)
+    if pair is None:
+        return
+    sess, proj = pair
+    if layer_index < 0 or layer_index >= len(proj.layers):
+        emit_error(f"Layer index {layer_index} out of range.")
+        return
+    layer = proj.layers[layer_index]
+    if filter_index < 0 or filter_index >= len(layer.filters):
+        emit_error(f"Filter index {filter_index} out of range.")
+        return
     try:
-        v = float(value) if "." in value else int(value)
+        v: Any = float(value) if "." in value else int(value)
     except ValueError:
         v = value
+    layer.filters[filter_index].params[param] = v
+    sess.project = proj
+    sess.save()
+    _maybe_save_project_path(ctx, sess)
     emit_result(
         f"Set filter {filter_index} {param}={v}",
         {"ok": True, "filter_index": filter_index, "param": param, "value": v},
@@ -812,16 +871,15 @@ def filter_set(ctx: click.Context, filter_index: int, param: str, value: str, la
 def filter_list(ctx: click.Context, layer_index: int, project_path: Path | None) -> None:
     """List filters on a layer."""
     _merge_project_path(ctx, project_path)
-    sess = GimpSession.open_or_create(ctx.obj["session_name"])
-    proj = sess.project
-    if proj is None:
-        emit_error("No project in session.")
+    pair = _get_session_and_project(ctx)
+    if pair is None:
         return
+    sess, proj = pair
     if layer_index < 0 or layer_index >= len(proj.layers):
         emit_error(f"Layer index {layer_index} out of range.")
         return
-    # No filters stored in model yet - return empty
-    emit_result(f"Filters on layer {layer_index}:", {"filters": []})
+    filters = [f.to_dict() for f in proj.layers[layer_index].filters]
+    emit_result(f"Filters on layer {layer_index}:", {"filters": filters})
 
 
 @filter_group.command("blur")
@@ -1017,7 +1075,7 @@ def canvas_rotate(angle: float, auto_crop: bool) -> None:
 )
 @click.pass_context
 def draw_group(ctx: click.Context, project_path: Path | None) -> None:
-    """Drawing operations (stored as layer metadata)."""
+    """Drawing operations (stored as layer draw operations, rendered on export)."""
     _merge_project_path(ctx, project_path)
 
 
@@ -1026,7 +1084,7 @@ def draw_group(ctx: click.Context, project_path: Path | None) -> None:
 @click.option("--text", "-t", required=True, help="Text to draw")
 @click.option("--x", type=int, default=0)
 @click.option("--y", type=int, default=0)
-@click.option("--font", default="Arial")
+@click.option("--font", default="DejaVuSans")
 @click.option("--size", type=int, default=24)
 @click.option("--color", default="#000000")
 @click.option("--project", "-p", "project_path", type=click.Path(path_type=Path, exists=False), default=None)
@@ -1042,21 +1100,23 @@ def draw_text(
     color: str,
     project_path: Path | None,
 ) -> None:
-    """Draw text on a layer (stored as text layer metadata)."""
+    """Draw text on a layer."""
     _merge_project_path(ctx, project_path)
-    sess = GimpSession.open_or_create(ctx.obj["session_name"])
-    proj = sess.project
-    if proj is None:
-        emit_error("No project in session.")
+    pair = _get_session_and_project(ctx)
+    if pair is None:
         return
+    sess, proj = pair
     if layer_index < 0 or layer_index >= len(proj.layers):
         emit_error(f"Layer index {layer_index} out of range.")
         return
-    layer = proj.layers[layer_index]
-    # Store text metadata (LayerInfo would need text, font, etc. - extend if needed)
+    op = DrawOperation(op_type="text", params={"text": text, "x": x, "y": y, "font": font, "size": size, "color": color})
+    proj.layers[layer_index].draw_ops.append(op)
+    sess.project = proj
+    sess.save()
+    _maybe_save_project_path(ctx, sess)
     emit_result(
-        f"Text drawn on layer {layer_index}",
-        {"ok": True, "layer": layer_index, "text": text, "x": x, "y": y},
+        f"Text '{text}' queued on layer {layer_index}",
+        {"ok": True, "layer": layer_index, "text": text, "x": x, "y": y, "font": font, "size": size, "color": color},
     )
 
 
@@ -1070,9 +1130,9 @@ def draw_text(
 @click.option("--y", type=int, default=None, help="Top edge (alternative to y1, use with --h)")
 @click.option("--w", "width", type=int, default=None, help="Width (use with --x --y)")
 @click.option("--h", "height", type=int, default=None, help="Height (use with --x --y)")
-@click.option("--fill", default=None)
-@click.option("--outline", default=None)
-@click.option("--stroke-width", "line_width", type=int, default=1, help="Outline width")
+@click.option("--fill", default="#000000", help="Fill color (#hex, named color, or transparent)")
+@click.option("--outline", default=None, help="Outline color")
+@click.option("--stroke-width", "stroke_width", type=int, default=1, help="Outline width")
 @click.option("--project", "-p", "project_path", type=click.Path(path_type=Path, exists=False), default=None)
 @click.pass_context
 def draw_rect(
@@ -1086,14 +1146,14 @@ def draw_rect(
     y: int | None,
     width: int | None,
     height: int | None,
-    fill: str | None,
+    fill: str,
     outline: str | None,
-    line_width: int,
+    stroke_width: int,
     project_path: Path | None,
 ) -> None:
-    """Draw a rectangle (stored as drawing operation). Use --x1 --y1 --x2 --y2 or --x --y --w --h."""
+    """Draw a filled rectangle. Use --x1 --y1 --x2 --y2 or --x --y --w --h."""
     _merge_project_path(ctx, project_path)
-    if (x1, y1, x2, y2).count(None) == 0:
+    if x1 is not None and y1 is not None and x2 is not None and y2 is not None:
         pass  # use x1,y1,x2,y2
     elif x is not None and y is not None and width is not None and height is not None:
         x1, y1 = x, y
@@ -1101,17 +1161,24 @@ def draw_rect(
     else:
         emit_error("Use either --x1 --y1 --x2 --y2 or --x --y --w --h")
         return
-    sess = GimpSession.open_or_create(ctx.obj["session_name"])
-    proj = sess.project
-    if proj is None:
-        emit_error("No project in session.")
+    pair = _get_session_and_project(ctx)
+    if pair is None:
         return
+    sess, proj = pair
     if layer_index < 0 or layer_index >= len(proj.layers):
         emit_error(f"Layer index {layer_index} out of range.")
         return
+    params: dict = {"x1": x1, "y1": y1, "x2": x2, "y2": y2, "fill": fill, "stroke_width": stroke_width}
+    if outline:
+        params["outline"] = outline
+    op = DrawOperation(op_type="rect", params=params)
+    proj.layers[layer_index].draw_ops.append(op)
+    sess.project = proj
+    sess.save()
+    _maybe_save_project_path(ctx, sess)
     emit_result(
-        f"Rectangle drawn on layer {layer_index}",
-        {"ok": True, "layer": layer_index, "coords": f"({x1},{y1})-({x2},{y2})"},
+        f"Rectangle ({x1},{y1})-({x2},{y2}) queued on layer {layer_index}",
+        {"ok": True, "layer": layer_index, "x1": x1, "y1": y1, "x2": x2, "y2": y2, "fill": fill},
     )
 
 
@@ -1121,8 +1188,9 @@ def draw_rect(
 @click.option("--cy", type=int, required=True, help="Center Y")
 @click.option("--rx", type=int, required=True, help="Radius X (horizontal)")
 @click.option("--ry", type=int, required=True, help="Radius Y (vertical)")
-@click.option("--fill", default=None)
-@click.option("--outline", default=None)
+@click.option("--fill", default="#000000", help="Fill color")
+@click.option("--outline", default=None, help="Outline color")
+@click.option("--stroke-width", "stroke_width", type=int, default=1)
 @click.option("--project", "-p", "project_path", type=click.Path(path_type=Path, exists=False), default=None)
 @click.pass_context
 def draw_ellipse(
@@ -1132,23 +1200,31 @@ def draw_ellipse(
     cy: int,
     rx: int,
     ry: int,
-    fill: str | None,
+    fill: str,
     outline: str | None,
+    stroke_width: int,
     project_path: Path | None,
 ) -> None:
-    """Draw an ellipse (stored as drawing operation)."""
+    """Draw an ellipse on a layer."""
     _merge_project_path(ctx, project_path)
-    sess = GimpSession.open_or_create(ctx.obj["session_name"])
-    proj = sess.project
-    if proj is None:
-        emit_error("No project in session.")
+    pair = _get_session_and_project(ctx)
+    if pair is None:
         return
+    sess, proj = pair
     if layer_index < 0 or layer_index >= len(proj.layers):
         emit_error(f"Layer index {layer_index} out of range.")
         return
+    params: dict = {"cx": cx, "cy": cy, "rx": rx, "ry": ry, "fill": fill, "stroke_width": stroke_width}
+    if outline:
+        params["outline"] = outline
+    op = DrawOperation(op_type="ellipse", params=params)
+    proj.layers[layer_index].draw_ops.append(op)
+    sess.project = proj
+    sess.save()
+    _maybe_save_project_path(ctx, sess)
     emit_result(
-        f"Ellipse drawn on layer {layer_index}",
-        {"ok": True, "layer": layer_index, "center": (cx, cy), "radius": (rx, ry)},
+        f"Ellipse center=({cx},{cy}) rx={rx} ry={ry} queued on layer {layer_index}",
+        {"ok": True, "layer": layer_index, "center": [cx, cy], "radius": [rx, ry], "fill": fill},
     )
 
 
@@ -1157,8 +1233,9 @@ def draw_ellipse(
 @click.option("--cx", type=int, required=True, help="Center X")
 @click.option("--cy", type=int, required=True, help="Center Y")
 @click.option("--r", "radius", type=int, required=True, help="Radius")
-@click.option("--fill", default=None)
-@click.option("--outline", default=None)
+@click.option("--fill", default="#000000", help="Fill color")
+@click.option("--outline", default=None, help="Outline color")
+@click.option("--stroke-width", "stroke_width", type=int, default=1)
 @click.option("--project", "-p", "project_path", type=click.Path(path_type=Path, exists=False), default=None)
 @click.pass_context
 def draw_circle(
@@ -1167,22 +1244,31 @@ def draw_circle(
     cx: int,
     cy: int,
     radius: int,
-    fill: str | None,
+    fill: str,
     outline: str | None,
+    stroke_width: int,
     project_path: Path | None,
 ) -> None:
-    """Draw a circle (ellipse with equal radii)."""
+    """Draw a circle (ellipse with equal radii) on a layer."""
     _merge_project_path(ctx, project_path)
-    ctx.invoke(
-        draw_ellipse,
-        layer_index=layer_index,
-        cx=cx,
-        cy=cy,
-        rx=radius,
-        ry=radius,
-        fill=fill,
-        outline=outline,
-        project_path=project_path,
+    pair = _get_session_and_project(ctx)
+    if pair is None:
+        return
+    sess, proj = pair
+    if layer_index < 0 or layer_index >= len(proj.layers):
+        emit_error(f"Layer index {layer_index} out of range.")
+        return
+    params: dict = {"cx": cx, "cy": cy, "rx": radius, "ry": radius, "fill": fill, "stroke_width": stroke_width}
+    if outline:
+        params["outline"] = outline
+    op = DrawOperation(op_type="ellipse", params=params)
+    proj.layers[layer_index].draw_ops.append(op)
+    sess.project = proj
+    sess.save()
+    _maybe_save_project_path(ctx, sess)
+    emit_result(
+        f"Circle center=({cx},{cy}) r={radius} queued on layer {layer_index}",
+        {"ok": True, "layer": layer_index, "center": [cx, cy], "radius": radius, "fill": fill},
     )
 
 
@@ -1202,9 +1288,10 @@ def draw_circle(
 @click.option("--y1", type=int, default=None)
 @click.option("--x2", type=int, default=None)
 @click.option("--y2", type=int, default=None)
-@click.option("--fill", default=None)
+@click.option("--fill", default="#000000")
 @click.option("--outline", default=None)
 @click.option("--stroke", default=None)
+@click.option("--stroke-width", "stroke_width", type=int, default=1)
 @click.option("--project", "-p", "project_path", type=click.Path(path_type=Path, exists=False), default=None)
 @click.pass_context
 def draw_shape(
@@ -1224,21 +1311,22 @@ def draw_shape(
     y1: int | None,
     x2: int | None,
     y2: int | None,
-    fill: str | None,
+    fill: str,
     outline: str | None,
     stroke: str | None,
+    stroke_width: int,
     project_path: Path | None,
 ) -> None:
     """Draw a shape (ellipse, circle, rect, or line). Dispatches to the specific draw command."""
     _merge_project_path(ctx, project_path)
     if shape_type == "ellipse" and cx is not None and cy is not None and rx is not None and ry is not None:
-        ctx.invoke(draw_ellipse, layer_index=layer_index, cx=cx, cy=cy, rx=rx, ry=ry, fill=fill, outline=outline, project_path=project_path)
+        ctx.invoke(draw_ellipse, layer_index=layer_index, cx=cx, cy=cy, rx=rx, ry=ry, fill=fill, outline=outline, stroke_width=stroke_width, project_path=project_path)
     elif shape_type == "circle" and cx is not None and cy is not None and radius is not None:
-        ctx.invoke(draw_circle, layer_index=layer_index, cx=cx, cy=cy, radius=radius, fill=fill, outline=outline, project_path=project_path)
+        ctx.invoke(draw_circle, layer_index=layer_index, cx=cx, cy=cy, radius=radius, fill=fill, outline=outline, stroke_width=stroke_width, project_path=project_path)
     elif shape_type == "rect" and x is not None and y is not None and width is not None and height is not None:
-        ctx.invoke(draw_rect, layer_index=layer_index, x=x, y=y, width=width, height=height, fill=fill, outline=outline, project_path=project_path)
+        ctx.invoke(draw_rect, layer_index=layer_index, x=x, y=y, width=width, height=height, fill=fill, outline=outline, stroke_width=stroke_width, project_path=project_path)
     elif shape_type == "line" and x1 is not None and y1 is not None and x2 is not None and y2 is not None:
-        ctx.invoke(draw_line, layer_index=layer_index, x1=x1, y1=y1, x2=x2, y2=y2, stroke=stroke or outline, project_path=project_path)
+        ctx.invoke(draw_line, layer_index=layer_index, x1=x1, y1=y1, x2=x2, y2=y2, stroke=stroke or fill, stroke_width=stroke_width, project_path=project_path)
     else:
         emit_error(
             f"Shape '{shape_type}' requires: "
@@ -1253,8 +1341,8 @@ def draw_shape(
 @click.option("--y1", type=int, required=True)
 @click.option("--x2", type=int, required=True)
 @click.option("--y2", type=int, required=True)
-@click.option("--stroke", default=None, help="Stroke color")
-@click.option("--width", type=int, default=1, help="Line width")
+@click.option("--stroke", default="#000000", help="Stroke color")
+@click.option("--width", "stroke_width", type=int, default=1, help="Line width")
 @click.option("--project", "-p", "project_path", type=click.Path(path_type=Path, exists=False), default=None)
 @click.pass_context
 def draw_line(
@@ -1264,23 +1352,27 @@ def draw_line(
     y1: int,
     x2: int,
     y2: int,
-    stroke: str | None,
-    width: int,
+    stroke: str,
+    stroke_width: int,
     project_path: Path | None,
 ) -> None:
-    """Draw a line (stored as drawing operation)."""
+    """Draw a line on a layer."""
     _merge_project_path(ctx, project_path)
-    sess = GimpSession.open_or_create(ctx.obj["session_name"])
-    proj = sess.project
-    if proj is None:
-        emit_error("No project in session.")
+    pair = _get_session_and_project(ctx)
+    if pair is None:
         return
+    sess, proj = pair
     if layer_index < 0 or layer_index >= len(proj.layers):
         emit_error(f"Layer index {layer_index} out of range.")
         return
+    op = DrawOperation(op_type="line", params={"x1": x1, "y1": y1, "x2": x2, "y2": y2, "stroke": stroke, "stroke_width": stroke_width})
+    proj.layers[layer_index].draw_ops.append(op)
+    sess.project = proj
+    sess.save()
+    _maybe_save_project_path(ctx, sess)
     emit_result(
-        f"Line drawn on layer {layer_index}",
-        {"ok": True, "layer": layer_index, "from": (x1, y1), "to": (x2, y2)},
+        f"Line ({x1},{y1})->({x2},{y2}) queued on layer {layer_index}",
+        {"ok": True, "layer": layer_index, "from": [x1, y1], "to": [x2, y2], "stroke": stroke},
     )
 
 
@@ -1311,7 +1403,6 @@ def session_undo(ctx: click.Context) -> None:
     if not sess.project or not sess.project.history:
         emit_error("Nothing to undo.")
         return
-    # History stores operation descriptions; full undo would need state snapshots
     sess.project.history.pop()
     sess.save()
     _maybe_save_project_path(ctx, sess)

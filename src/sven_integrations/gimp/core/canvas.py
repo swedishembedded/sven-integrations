@@ -89,9 +89,7 @@ def flip(direction: Literal["h", "v"]) -> dict[str, Any]:
     """Flip the image horizontally (``"h"``) or vertically (``"v"``)."""
     if direction not in ("h", "v"):
         raise ValueError(f"direction must be 'h' or 'v', got {direction!r}")
-    orientation = (
-        "ORIENTATION-HORIZONTAL" if direction == "h" else "ORIENTATION-VERTICAL"
-    )
+    orientation = "ORIENTATION-HORIZONTAL" if direction == "h" else "ORIENTATION-VERTICAL"
     script = f"(gimp-image-flip (car (gimp-image-list)) {orientation})"
     return {
         "action": "flip",
