@@ -148,6 +148,28 @@ def cmd_open(ctx: click.Context, path: str) -> None:
 
 
 # ---------------------------------------------------------------------------
+# save
+# ---------------------------------------------------------------------------
+
+
+@drawio_cli.command("save")
+@click.argument("path", type=click.Path())
+@click.pass_context
+def cmd_save(ctx: click.Context, path: str) -> None:
+    """Save the current document to a .drawio XML file (no Draw.io desktop required)."""
+    session = _get_session(ctx)
+    doc = _load_doc(session)
+    xml = render_xml(doc)
+    p = Path(path)
+    p.parent.mkdir(parents=True, exist_ok=True)
+    p.write_text(xml, encoding="utf-8")
+    emit_result(
+        f"Saved to {path}",
+        {"status": "saved", "path": path},
+    )
+
+
+# ---------------------------------------------------------------------------
 # export
 # ---------------------------------------------------------------------------
 

@@ -33,27 +33,27 @@ sven-integrations-drawio --json -p "$P" shape add --type rounded --label "Action
 
 sven-integrations-drawio --json -p "$P" shape add --type rounded --label "Action B" --x 340 --y 330
 
-# 3. Add connectors (source/target are cell IDs from the add output)
-sven-integrations-drawio --json -p "$P" connector add --source <START_ID> --target <DECISION_ID> --label "→"
-sven-integrations-drawio --json -p "$P" connector add --source <DECISION_ID> --target <ACTIONA_ID> --label "Yes"
-sven-integrations-drawio --json -p "$P" connector add --source <DECISION_ID> --target <ACTIONB_ID> --label "No"
+# 3. Add connectors (--from and --to are cell IDs from the add output)
+sven-integrations-drawio --json -p "$P" connector add --from <START_ID> --to <DECISION_ID> --label "→"
+sven-integrations-drawio --json -p "$P" connector add --from <DECISION_ID> --to <ACTIONA_ID> --label "Yes"
+sven-integrations-drawio --json -p "$P" connector add --from <DECISION_ID> --to <ACTIONB_ID> --label "No"
 
-# 4. Export to PNG (requires Draw.io desktop app)
-sven-integrations-drawio --json -p "$P" export --format png --output /tmp/diagram.png
+# 4. Save to .drawio XML (always works) or export to PNG (requires Draw.io desktop)
+sven-integrations-drawio --json -p "$P" save /tmp/diagram.drawio
 
 # 5. Verify
-ls -lh /tmp/diagram.png
+ls -lh /tmp/diagram.drawio
 ```
 
 ## Key rules for agents
 
 1. **Always run `new` first** to create a fresh document with at least one page.
 2. **Always pass `-p /absolute/path/to/project.json`** to persist state.
-3. **Shape `add` returns a `cell_id`** — capture it for connector `--source` and `--target`.
-4. **`export` requires Draw.io desktop installed** — for just the `.drawio` XML, use `save` instead.
+3. **Shape `add` returns a `cell_id`** — capture it for connector `--from` and `--to`.
+4. **`export` requires Draw.io desktop installed** — use `save /path/to/diagram.drawio` to write XML (no desktop needed).
 5. **Coordinates are in diagram units (pixels at 100% zoom)** — typical values: x/y 50–800, width/height 120–200 for labels.
-6. **Page management** — multi-page diagrams use `page add/rename/switch`; shapes go on the active page.
-7. **Use `shape list` and `connector list`** to inspect what's already on the diagram.
+6. **Page management** — multi-page diagrams use `page add` and `page remove`; shapes go on the first page.
+7. **Use `shape list`** to inspect shapes and capture cell IDs for connectors.
 
 ## Command groups
 
@@ -62,28 +62,25 @@ ls -lh /tmp/diagram.png
 |---------|-------------|-----------|
 | `new` | Create new document | `--name NAME` |
 | `open PATH` | Load existing .drawio file | — |
-| `save PATH` | Save diagram to .drawio XML | — |
-| `info` | Show document info | — |
+| `save PATH` | Save diagram to .drawio XML (no Draw.io desktop required) | — |
+| `export` | Export to PNG/PDF/SVG (requires Draw.io desktop) | `--format png\|svg\|pdf`, `-o PATH` |
 
 ### page
 | Command | Description | Key flags |
 |---------|-------------|-----------|
 | `list` | List all pages | — |
 | `add` | Add a page | `--name NAME` |
-| `rename` | Rename a page | `--index N`, `--name NEW_NAME` |
-| `switch` | Set active page | `--index N` |
-| `remove` | Remove a page | `--index N` |
+| `remove` | Remove a page | `--name PAGE_NAME` |
 
 ### shape
 | Command | Description | Key flags |
 |---------|-------------|-----------|
-| `add` | Add a shape | `--type TYPE`, `--label TEXT`, `--x X`, `--y Y`, `--width W`, `--height H`, `--style STYLE` |
-| `edit` | Edit a shape | `--id ID`, `--label TEXT`, `--style STYLE` |
-| `move` | Move a shape | `--id ID`, `--x X`, `--y Y` |
-| `resize` | Resize a shape | `--id ID`, `--width W`, `--height H` |
+| `add` | Add a shape | `--type TYPE`, `--label TEXT`, `--x X`, `--y Y`, `-w W`, `-H H` |
+| `label` | Update shape label | `--id ID`, `--text TEXT` |
 | `remove` | Remove a shape | `--id ID` |
 | `list` | List all shapes | — |
-| `style` | Apply style to a shape | `--id ID`, `--style STYLE_STRING` |
+
+**Note:** `shape add` does NOT support `--style`. Use `shape label` to change text after creation.
 
 **Common shape types:**
 ```
@@ -100,42 +97,18 @@ process         Thick-bordered process box
 document        Curled document shape
 ```
 
-**Style string examples:**
-```
-"fillColor=#dae8fc;strokeColor=#6c8ebf;"          (light blue box)
-"fillColor=#d5e8d4;strokeColor=#82b366;"          (light green box)
-"fillColor=#fff2cc;strokeColor=#d6b656;"          (yellow box)
-"fillColor=#f8cecc;strokeColor=#b85450;"          (red/error box)
-"shape=hexagon;fillColor=#e1d5e7;strokeColor=#9673a6;"  (purple hexagon)
-```
-
 ### connector
 | Command | Description | Key flags |
 |---------|-------------|-----------|
-| `add` | Add a connector between shapes | `--source ID`, `--target ID`, `--label TEXT`, `--style STYLE` |
-| `edit` | Edit a connector | `--id ID`, `--label TEXT` |
+| `add` | Add a connector between shapes | `--from ID`, `--to ID`, `--label TEXT` |
 | `remove` | Remove a connector | `--id ID` |
-| `list` | List all connectors | — |
 
-**Connector style examples:**
-```
-"edgeStyle=orthogonalEdgeStyle;"     (right-angle routing, default)
-"edgeStyle=elbowEdgeStyle;"          (elbow routing)
-"edgeStyle=entityRelationEdgeStyle;" (ER diagram lines)
-"dashed=1;"                          (dashed line)
-"endArrow=ERzeroToMany;"            (ER zero-to-many)
-```
-
-### export
-| Command | Description | Key flags |
-|---------|-------------|-----------|
-| `export` | Export to image/PDF (requires Draw.io desktop) | `--format png\|svg\|pdf`, `--output PATH` (required), `--page N` |
+**Important:** Use `--from` and `--to` (not `--source`/`--target`). Both accept cell IDs from `shape add` output.
 
 ### session
 | Command | Description |
 |---------|-------------|
-| `undo` | Undo last operation |
-| `history` | Show operation history |
+| `show` | Show current session info |
 | `list` | List all sessions |
 | `delete` | Delete current session |
 
@@ -147,35 +120,32 @@ P=/tmp/arch.json
 # Create document
 sven-integrations-drawio --json -p "$P" new --name "System Architecture"
 
-# Add nodes with blue styling for services
-sven-integrations-drawio --json -p "$P" shape add --type rounded --label "Browser" --x 50 --y 50 --style "fillColor=#dae8fc;strokeColor=#6c8ebf;"
-sven-integrations-drawio --json -p "$P" shape add --type rectangle --label "API Gateway" --x 250 --y 50 --style "fillColor=#d5e8d4;strokeColor=#82b366;"
-sven-integrations-drawio --json -p "$P" shape add --type rectangle --label "Auth Service" --x 150 --y 200 --style "fillColor=#d5e8d4;strokeColor=#82b366;"
-sven-integrations-drawio --json -p "$P" shape add --type rectangle --label "User Service" --x 350 --y 200 --style "fillColor=#d5e8d4;strokeColor=#82b366;"
-sven-integrations-drawio --json -p "$P" shape add --type cylinder --label "PostgreSQL" --x 250 --y 350 --style "fillColor=#fff2cc;strokeColor=#d6b656;"
+# Add nodes (no --style; use shape types for visual variety)
+sven-integrations-drawio --json -p "$P" shape add --type rounded --label "Browser" --x 50 --y 50
+sven-integrations-drawio --json -p "$P" shape add --type rectangle --label "API Gateway" --x 250 --y 50
+sven-integrations-drawio --json -p "$P" shape add --type rectangle --label "Auth Service" --x 150 --y 200
+sven-integrations-drawio --json -p "$P" shape add --type rectangle --label "User Service" --x 350 --y 200
+sven-integrations-drawio --json -p "$P" shape add --type cylinder --label "PostgreSQL" --x 250 --y 350
 
-# Connect them (using cell IDs from output)
-sven-integrations-drawio --json -p "$P" connector add --source <BROWSER_ID> --target <GATEWAY_ID> --label "HTTPS"
-sven-integrations-drawio --json -p "$P" connector add --source <GATEWAY_ID> --target <AUTH_ID> --label "validate"
-sven-integrations-drawio --json -p "$P" connector add --source <GATEWAY_ID> --target <USER_ID> --label "route"
-sven-integrations-drawio --json -p "$P" connector add --source <USER_ID> --target <DB_ID> --label "SQL"
+# Connect them (--from and --to use cell IDs from shape add output)
+sven-integrations-drawio --json -p "$P" connector add --from <BROWSER_ID> --to <GATEWAY_ID> --label "HTTPS"
+sven-integrations-drawio --json -p "$P" connector add --from <GATEWAY_ID> --to <AUTH_ID> --label "validate"
+sven-integrations-drawio --json -p "$P" connector add --from <GATEWAY_ID> --to <USER_ID> --label "route"
+sven-integrations-drawio --json -p "$P" connector add --from <USER_ID> --to <DB_ID> --label "SQL"
 
-# Verify
-sven-integrations-drawio --json -p "$P" shape list
-sven-integrations-drawio --json -p "$P" connector list
-
-# Export (requires Draw.io desktop installed)
-sven-integrations-drawio --json -p "$P" export --format png --output /tmp/architecture.png
+# Save to .drawio (always works) or export PNG (requires Draw.io desktop)
+sven-integrations-drawio --json -p "$P" save /tmp/architecture.drawio
 ```
 
 ## Common pitfalls
 
-- **`export` needs Draw.io desktop** — if not installed, use `save /tmp/diagram.drawio` to get the XML file and open it manually in Draw.io.
-- **Capture cell IDs from output** — `shape add` returns `{"cell_id": "..."}`. You need this for connectors and edits.
-- **Style strings are semicolon-separated** — copy from Draw.io's style editor. Example: `"fillColor=#dae8fc;strokeColor=#6c8ebf;rounded=1;"`.
-- **Default page index is 0** — to add shapes to a specific page, use `page switch --index N` first.
+- **`export` needs Draw.io desktop** — if not installed, use `save /path/to/diagram.drawio` to write XML (no desktop needed).
+- **Capture cell IDs from output** — `shape add` returns `{"cell_id": "..."}`. You need this for connector `--from` and `--to`.
+- **Do NOT use `--style` on shape add** — the CLI does not support it. Use shape types (rounded, rhombus, cylinder, etc.) for visual variety.
+- **Use `--from` and `--to` for connectors** — not `--source`/`--target`.
 - **Coordinates start at top-left** — increasing Y moves DOWN. Typical diagram area: 50–1000 × 50–800.
 - **`new` always required first** — if the document is empty, `shape add` will fail with "No document in session".
+- **Shell quoting** — when chaining multiple commands, prefer one command per line or use single-quoted labels to avoid quote-escaping issues.
 
 ## For agents: full flag reference
 
