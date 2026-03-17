@@ -5,7 +5,7 @@ description: |
   diagrams, network diagrams, UML diagrams, entity-relationship diagrams, or any
   other structured diagram format. Trigger phrases: "create diagram", "flowchart",
   "architecture diagram", "network topology", "draw.io", "UML diagram", "ERD".
-version: 2.0.0
+version: 2.1.0
 sven:
   requires_bins: [sven-integrations-drawio]
 ---
@@ -54,6 +54,17 @@ ls -lh /tmp/diagram.drawio
 5. **Coordinates are in diagram units (pixels at 100% zoom)** — typical values: x/y 50–800, width/height 120–200 for labels.
 6. **Page management** — multi-page diagrams use `page add` and `page remove`; shapes go on the first page.
 7. **Use `shape list`** to inspect shapes and capture cell IDs for connectors.
+8. **Cell IDs are unique per document** — if you run `new` or delete the project file, ALL previous cell IDs become invalid. Never use cell IDs from a previous shell run or a different document.
+
+## Recommended workflow for agents (two-phase)
+
+**Phase 1 — Shapes only:** Run one shell with `new` and all `shape add` commands. Do NOT add connectors yet.
+
+**Phase 2 — Connectors:** Parse `cell_id` from Phase 1 output (or run `shape list`), then run a separate shell with `connector add` commands using those IDs.
+
+**Phase 3 — Save:** Run `save /path/to/diagram.drawio`.
+
+Do NOT mix connector commands with shape add in the same script unless you already have valid cell IDs from the current run. Do NOT use hardcoded IDs from a previous document after calling `new` or `rm` on the project file.
 
 ## Command groups
 
@@ -145,7 +156,13 @@ sven-integrations-drawio --json -p "$P" save /tmp/architecture.drawio
 - **Use `--from` and `--to` for connectors** — not `--source`/`--target`.
 - **Coordinates start at top-left** — increasing Y moves DOWN. Typical diagram area: 50–1000 × 50–800.
 - **`new` always required first** — if the document is empty, `shape add` will fail with "No document in session".
-- **Shell quoting** — when chaining multiple commands, prefer one command per line or use single-quoted labels to avoid quote-escaping issues.
+- **Shell quoting** — run each shell invocation with one command per line. Do NOT embed complex multi-line strings with nested double quotes inside `shell_command`; this causes `unexpected EOF while looking for matching '"'`. Use single-quoted labels for text with special characters (e.g. `--label 'merge PR'`).
+
+## Critical anti-patterns (do NOT do these)
+
+1. **Stale cell IDs** — After `rm` on the project file or `new`, the document is fresh. Cell IDs from any previous run are invalid. Using them in `connector add` will fail or create broken references.
+2. **Shapes + connectors in one script with unknown IDs** — Do not add connector commands in the same shell block as shape add unless you have the `cell_id` values from that same block's output. Run shapes first, parse IDs, then run connectors in a separate shell.
+3. **Nested quotes in shell_command** — Avoid `"` inside the shell string when the tool wraps it. Prefer `--label 'text'` over `--label "text"` when passing to a shell tool.
 
 ## For agents: full flag reference
 
